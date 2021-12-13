@@ -117,11 +117,15 @@ def step_robot(r, r_cam, Tep, rot_pow, vis_pow, camera_w, ps_vis, xi_vis, v_cam,
     c[0] = -ε * eps_fact
 
     # The lower and upper bounds on the joint velocity and slack variable
-    lb = -np.r_[r.qdlim[: r.n], r_cam.qdlim[3:r_cam.n], 100 * np.ones(9), 0]
-    ub = np.r_[r.qdlim[: r.n], r_cam.qdlim[3:r_cam.n], 100 * np.ones(9), 100]
+    lb = -np.r_[r.qdlim[: r.n], r_cam.qdlim[3:r_cam.n], 100 * np.ones(6), 500 * np.ones(3), 0]
+    ub = np.r_[r.qdlim[: r.n], r_cam.qdlim[3:r_cam.n], 100 * np.ones(6), 500 * np.ones(3), 100]
 
     # Solve for the joint velocities dq
     qd = qp.solve_qp(Q, c, Ain, bin, Aeq, beq, lb=lb, ub=ub)
+    
+    if qd is None:
+        raise ValueError('QP failed to solve')
+
     qd_cam = np.concatenate((qd[:3], qd[r.n : r.n + 2]))
     qd = qd[: r.n]
 
@@ -229,6 +233,8 @@ for rot_pow in rot_pow_list:
                             vision_pc_total = 0
                             time_elapsed_total = 0
                             is_succes_total = 0
+                            max_vis = 0
+                            min_vis = 100
 
                             curr_iter += 1
 
@@ -266,8 +272,12 @@ for rot_pow in rot_pow_list:
                                 seen_count = 0
 
                                 while not arrived:
+                                    try:
+                                        arrived, fetch.qd, fetch_camera.qd, obj_seen = step_robot(fetch, fetch_camera, wTep.A, rot_pow, vis_pow, camera_w, ps_vis, xi_vis, v_cam, eps_fact)
+                                    except Exception as e:
+                                        print(e)
+                                        break
 
-                                    arrived, fetch.qd, fetch_camera.qd, obj_seen = step_robot(fetch, fetch_camera, wTep.A, rot_pow, vis_pow, camera_w, ps_vis, xi_vis, v_cam, eps_fact)
                                     env.step(dt)
 
                                     # Reset bases
@@ -288,7 +298,8 @@ for rot_pow in rot_pow_list:
                                         print("Simulation time out")
                                         break
 
-                                print(rot_pow, vis_pow, camera_w, ps_vis, xi_vis, goal)
+                                total_count = max(1, total_count)
+                                print(rot_pow, vis_pow, camera_w, ps_vis, xi_vis, v_cam, eps_fact, goal)
                                 print("Vision: ", seen_count / total_count * 100, "%")
                                 print("Time elapsed: ", total_count * dt, "s")
                                 print("Success: ", arrived)
@@ -297,6 +308,8 @@ for rot_pow in rot_pow_list:
                                 vision_pc =  seen_count / total_count * 100
                                 time_elapsed = total_count * dt
                                 is_success = arrived
+                                max_vis = max(vision_pc, max_vis)
+                                min_vis = min(vision_pc, max_vis)
 
                                 vision_pc_total += seen_count / total_count * 100 / 10
                                 time_elapsed_total += total_count * dt / 10
@@ -310,4 +323,4 @@ for rot_pow in rot_pow_list:
                                 
                             with open('avg_data.csv', 'a', newline='') as csvfile:
                                 writer = csv.writer(csvfile, delimiter=',', quotechar='|', quoting=csv.QUOTE_MINIMAL)
-                                writer.writerow([rot_pow, vis_pow, camera_w, ps_vis, xi_vis, v_cam, eps_fact, vision_pc_total, time_elapsed_total, is_succes_total])
+                                writer.writerow([rot_pow, vis_pow, camera_w, ps_vis, xi_vis, v_cam, eps_fact, vision_pc_total, max_vis, min_vis, time_elapsed_total, is_succes_total])
