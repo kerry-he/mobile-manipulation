@@ -18,7 +18,7 @@ def transform_between_vectors(a, b):
     return sm.SE3.AngleAxis(angle, axis), angle, axis
 
 
-def step_robot(r, r_cam, Tep, rot_pow, vis_pow, camera_w, ps_vis, xi_vis, v_cam, eps_fact):
+def step_robot(r, r_cam, Tep, centroid_sight, w_pos, pow_pos, w_vis, pow_vis):
 
     wTe = r.fkine(r.q, fast=True)
     wTc = r_cam.fkine(r_cam.q, fast=True)
@@ -40,18 +40,16 @@ def step_robot(r, r_cam, Tep, rot_pow, vis_pow, camera_w, ps_vis, xi_vis, v_cam,
     Q[: r.n, : r.n] *= Y                                        # Robotic manipulator
     Q[:2, :2] *= 1.0 / et                                       # Mobile base
     Q[r.n : r.n + 2, r.n : r.n + 2] *= Y                        # Camera
-    Q[r.n + 2 : -7, r.n + 2 : -7] = (1.0 / et) * np.eye(3)      # Slack manipulator
-    Q[r.n + 5 : -4, r.n + 5 : -4] = (1.0 / np.power(et, rot_pow)) * np.eye(3)      # Slack manipulator
-    Q[-4:-1, -4:-1] = camera_w * np.eye(3)                                # Slack camera
-    Q[-1, -1] = np.power(et, vis_pow)
+    Q[r.n + 2 : -7, r.n + 2 : -7] = (w_pos / np.power(et, pow_pos)) * np.eye(3)      # Slack manipulator
+    Q[r.n + 5 : -4, r.n + 5 : -4] = (1.0 / np.power(et, 5)) * np.eye(3)      # Slack manipulator
+    Q[-4:-1, -4:-1] = 100 * np.eye(3)                                # Slack camera
+    Q[-1, -1] = w_vis * np.power(et, pow_vis)
 
     v_manip, _ = rtb.p_servo(wTe, Tep, 1.5)
     v_manip[3:] *= 1.3
 
-    v_camera, _ = rtb.p_servo(sm.SE3(), head_rotation, v_cam)
-    v_camera *= 2.6
-    # v_cam_norm = np.linalg.norm(v_camera)
-    # v_camera = v_camera / np.linalg.norm(v_camera) * 5 * (1-np.exp(-v_cam_norm*10))
+    v_camera, _ = rtb.p_servo(sm.SE3(), head_rotation, 20)
+    v_camera *= 1.3
 
     # The equality contraints
     Aeq = np.c_[r.jacobe(r.q, fast=True), np.zeros((6, 2)), np.eye(6), np.zeros((6, 4))]
@@ -75,7 +73,7 @@ def step_robot(r, r_cam, Tep, rot_pow, vis_pow, camera_w, ps_vis, xi_vis, v_cam,
 
     # Form the joint limit velocity damper
     Ain[: r.n, : r.n], bin[: r.n] = r.joint_velocity_damper(ps, pi, r.n)
-    
+
     Ain_torso, bin_torso = r_cam.joint_velocity_damper(0.0, 0.05, r_cam.n)
     Ain[2, 2] = Ain_torso[2, 2]
     bin[2] = bin_torso[2]
@@ -84,25 +82,22 @@ def step_robot(r, r_cam, Tep, rot_pow, vis_pow, camera_w, ps_vis, xi_vis, v_cam,
     Ain[r.n : r.n + 2, r.n : r.n + 2] = Ain_cam[3:, 3:]
     bin[r.n : r.n + 2] = bin_cam[3:]
 
-    c_Ain, c_bin, c_din = r.vision_collision_damper(
-        line_of_sight,
+
+    # Draw line of sight between camera and object
+    c_Ain, c_bin, _ = r.vision_collision_damper(
+        centroid_sight,
         r.q[:r.n],
         0.3,
-        ps_vis,
-        xi_vis,
+        0.2,
+        1.0,
         start=r.link_dict["shoulder_pan_link"],
-        end=r.link_dict["wrist_roll_link"],
-        camera=r_cam
-    )
+        end=r.link_dict["gripper_link"],
+        camera=r_cam,
+    )    
 
     if c_Ain is not None and c_bin is not None:
-        # Stack the inequality constraints
-        c_Ain[:, :2] = 0
         Ain = np.r_[Ain, c_Ain]
         bin = np.r_[bin, c_bin]
-
-
-    obj_seen = min(c_din) > 0.05 and head_angle < np.deg2rad(45)
 
     # Linear component of objective function: the manipulability Jacobian
     c = np.concatenate(
@@ -114,18 +109,14 @@ def step_robot(r, r_cam, Tep, rot_pow, vis_pow, camera_w, ps_vis, xi_vis, v_cam,
     bTe = r.fkine(r.q, include_base=False, fast=True)
     θε = math.atan2(bTe[1, -1], bTe[0, -1])
     ε = kε * θε
-    c[0] = -ε * eps_fact
+    c[0] = -ε
 
     # The lower and upper bounds on the joint velocity and slack variable
-    lb = -np.r_[r.qdlim[: r.n], r_cam.qdlim[3:r_cam.n], 100 * np.ones(6), 500 * np.ones(3), 0]
-    ub = np.r_[r.qdlim[: r.n], r_cam.qdlim[3:r_cam.n], 100 * np.ones(6), 500 * np.ones(3), 100]
+    lb = -np.r_[r.qdlim[: r.n], r_cam.qdlim[3:r_cam.n], 100 * np.ones(9), 0]
+    ub = np.r_[r.qdlim[: r.n], r_cam.qdlim[3:r_cam.n], 100 * np.ones(9), 100]
 
     # Solve for the joint velocities dq
     qd = qp.solve_qp(Q, c, Ain, bin, Aeq, beq, lb=lb, ub=ub)
-    
-    if qd is None:
-        raise ValueError('QP failed to solve')
-
     qd_cam = np.concatenate((qd[:3], qd[r.n : r.n + 2]))
     qd = qd[: r.n]
 
@@ -136,10 +127,11 @@ def step_robot(r, r_cam, Tep, rot_pow, vis_pow, camera_w, ps_vis, xi_vis, v_cam,
         qd *= 1.4
         qd_cam *= 1.4
 
+
     if et < 0.02:
-        return True, qd, qd_cam, obj_seen
+        return True, qd, qd_cam
     else:
-        return False, qd, qd_cam, obj_seen
+        return False, qd, qd_cam
 
 
 def obj_in_vision(r, r_cam, Tep):
@@ -154,11 +146,8 @@ def obj_in_vision(r, r_cam, Tep):
     target_pos = Tep[:3, 3]
     middle = (camera_pos + target_pos) / 2
     R, _, _ = transform_between_vectors(np.array([0., 0., 1.]), camera_pos - target_pos)
-    los = sg.Cylinder(
-        radius=0.001, 
-        length=np.linalg.norm(camera_pos - target_pos), 
-        base=sm.SE3(middle) * R
-    )
+
+    line_of_sight._base = (sm.SE3(middle) * R).A
 
     _, _, c_din = r.vision_collision_damper(
         line_of_sight,
@@ -181,13 +170,10 @@ def obj_in_vision(r, r_cam, Tep):
 
 
 # Grid search parameters
-rot_pow_list = [1, 3, 5]
-vis_pow_list = [1, 3, 5]
-camera_w_list = [0.1, 1, 10, 100]
-ps_list = [0.1, 0.15]
-xi_list = [0.1, 1.0, 1.5]
-v_cam_list = [1, 10, 20]
-epsilon_list = [0.0, 1.0]
+w_pos_list = [1, 10, 100, 1000]
+pow_pos_list = [1, 2, 3, 4]
+w_vis_list = [100, 1000, 10000, 100000]
+pow_vis_list = [3, 5, 7, 9]
 
 
 
@@ -221,106 +207,112 @@ load_iter = 0
 curr_iter = 0
 
 env = swift.Swift()
-env.launch(realtime=False, headless=True)
+env.launch(realtime=True)
 
-for rot_pow in rot_pow_list:
-    for vis_pow in vis_pow_list:
-        for camera_w in camera_w_list:
-            for ps_vis in ps_list:
-                for xi_vis in xi_list:
-                    for v_cam in v_cam_list:
-                        for eps_fact in epsilon_list:
-                            vision_pc_total = 0
-                            time_elapsed_total = 0
-                            is_succes_total = 0
-                            max_vis = 0
-                            min_vis = 100
+for w_pos in w_pos_list:
+    for pow_pos in pow_pos_list:
+        for w_vis in w_vis_list:
+            for pow_vis in pow_vis_list:
+                vision_pc_total = 0
+                time_elapsed_total = 0
+                is_succes_total = 0
+                max_vis = 0
+                min_vis = 100
 
-                            curr_iter += 1
+                curr_iter += 1
 
-                            if curr_iter <= load_iter:
-                                continue
+                if curr_iter <= load_iter:
+                    continue
 
-                            for goal in range(len(goal_pos_list)):
+                for goal in range(len(goal_pos_list)):
 
-                                ax_goal = sg.Axes(0.1)
-                                env.add(ax_goal)
+                    ax_goal = sg.Axes(0.1)
+                    env.add(ax_goal)
 
-                                fetch = rtb.models.Fetch()
-                                fetch.q = fetch.qr
-                                env.add(fetch)
+                    fetch = rtb.models.Fetch()
+                    fetch.q = fetch.qr
+                    env.add(fetch)
 
-                                fetch_camera = rtb.models.FetchCamera()
-                                fetch_camera.q = fetch_camera.qr
-                                env.add(fetch_camera)
-                                sight_base = sm.SE3.Ry(np.pi/2) * sm.SE3(0.0, 0.0, 2.5)
-                                line_of_sight = sg.Cylinder(radius=0.001, length=5.0, base=sight_base)
-                                line_of_sight._base = fetch_camera.fkine(fetch_camera.q, fast=True) @ sight_base.A
-                                env.add(line_of_sight)
+                    fetch_camera = rtb.models.FetchCamera()
+                    fetch_camera.q = fetch_camera.qr
+                    env.add(fetch_camera)
 
-                                arrived = False
-                                dt = 0.025
+                    sight_base = sm.SE3.Ry(np.pi/2) * sm.SE3(0.0, 0.0, 2.5)
+                    centroid_sight = sg.Cylinder(radius=0.001, 
+                                                length=5.0, 
+                                                base=fetch_camera.fkine(fetch_camera.q, fast=True) @ sight_base.A
+                    )
+                    env.add(centroid_sight)
 
-                                # Behind
-                                env.set_camera_pose([-2, 3, 0.7], [-2, 0.0, 0.5])
-                                wTep = goal_pos_list[goal] * goal_orient_list[goal]
-                                ax_goal.base = wTep
+                    line_of_sight = sg.Cylinder(radius=0.001, 
+                                                length=5.0, 
+                                                base=fetch_camera.fkine(fetch_camera.q, fast=True) @ sight_base.A
+                    )
+                    env.add(line_of_sight)
 
-                                env.step()
+                    arrived = False
+                    dt = 0.025
 
-                                total_count = 0
-                                seen_count = 0
+                    # Behind
+                    env.set_camera_pose([-2, 3, 0.7], [-2, 0.0, 0.5])
+                    wTep = goal_pos_list[goal] * goal_orient_list[goal]
+                    ax_goal.base = wTep
 
-                                while not arrived:
-                                    try:
-                                        arrived, fetch.qd, fetch_camera.qd, obj_seen = step_robot(fetch, fetch_camera, wTep.A, rot_pow, vis_pow, camera_w, ps_vis, xi_vis, v_cam, eps_fact)
-                                    except Exception as e:
-                                        print(e)
-                                        break
+                    env.step()
 
-                                    env.step(dt)
+                    total_count = 0
+                    seen_count = 0
 
-                                    # Reset bases
-                                    base_new = fetch.fkine(fetch._q, end=fetch.links[2], fast=True)
-                                    fetch._base.A[:] = base_new
-                                    fetch.q[:2] = 0
+                    while not arrived:
+                        try:
+                            arrived, fetch.qd, fetch_camera.qd = step_robot(fetch, fetch_camera, wTep.A, centroid_sight, w_pos, pow_pos, w_vis, pow_vis)
+                        except Exception as e:
+                            print(e)
+                            break
 
-                                    base_new = fetch_camera.fkine(fetch_camera._q, end=fetch_camera.links[2], fast=True)
-                                    fetch_camera._base.A[:] = base_new
-                                    fetch_camera.q[:2] = 0
+                        env.step(dt)
 
-                                    line_of_sight._base = fetch_camera.fkine(fetch_camera.q, fast=True) @ sight_base.A
+                        # Reset bases
+                        base_new = fetch.fkine(fetch._q, end=fetch.links[2], fast=True)
+                        fetch._base.A[:] = base_new
+                        fetch.q[:2] = 0
 
-                                    total_count += 1
-                                    seen_count += obj_in_vision(fetch, fetch_camera, wTep.A)
+                        base_new = fetch_camera.fkine(fetch_camera._q, end=fetch_camera.links[2], fast=True)
+                        fetch_camera._base.A[:] = base_new
+                        fetch_camera.q[:2] = 0
 
-                                    if (total_count * dt) > 100:
-                                        print("Simulation time out")
-                                        break
+                        centroid_sight._base = fetch_camera.fkine(fetch_camera.q, fast=True) @ sight_base.A
 
-                                total_count = max(1, total_count)
-                                print(rot_pow, vis_pow, camera_w, ps_vis, xi_vis, v_cam, eps_fact, goal)
-                                print("Vision: ", seen_count / total_count * 100, "%")
-                                print("Time elapsed: ", total_count * dt, "s")
-                                print("Success: ", arrived)
-                                print()
+                        total_count += 1
+                        seen_count += obj_in_vision(fetch, fetch_camera, wTep.A)
 
-                                vision_pc =  seen_count / total_count * 100
-                                time_elapsed = total_count * dt
-                                is_success = arrived
-                                max_vis = max(vision_pc, max_vis)
-                                min_vis = min(vision_pc, max_vis)
+                        if (total_count * dt) > 50:
+                            print("Simulation time out")
+                            break
 
-                                vision_pc_total += seen_count / total_count * 100 / 10
-                                time_elapsed_total += total_count * dt / 10
-                                is_succes_total += arrived
+                    total_count = max(1, total_count)
+                    print(w_pos, pow_pos, w_vis, pow_vis, goal)
+                    print("Vision: ", seen_count / total_count * 100, "%")
+                    print("Time elapsed: ", total_count * dt, "s")
+                    print("Success: ", arrived)
+                    print()
 
-                                with open('all_data.csv', 'a', newline='') as csvfile:
-                                    writer = csv.writer(csvfile, delimiter=',', quotechar='|', quoting=csv.QUOTE_MINIMAL)
-                                    writer.writerow([rot_pow, vis_pow, camera_w, ps_vis, xi_vis, v_cam, eps_fact, goal, vision_pc, time_elapsed, is_success])
+                    vision_pc =  seen_count / total_count * 100
+                    time_elapsed = total_count * dt
+                    is_success = arrived
+                    max_vis = max(vision_pc, max_vis)
+                    min_vis = min(vision_pc, max_vis)
 
-                                env.restart()
-                                
-                            with open('avg_data.csv', 'a', newline='') as csvfile:
-                                writer = csv.writer(csvfile, delimiter=',', quotechar='|', quoting=csv.QUOTE_MINIMAL)
-                                writer.writerow([rot_pow, vis_pow, camera_w, ps_vis, xi_vis, v_cam, eps_fact, vision_pc_total, max_vis, min_vis, time_elapsed_total, is_succes_total])
+                    vision_pc_total += seen_count / total_count * 100 / 10
+                    time_elapsed_total += total_count * dt / 10
+                    is_succes_total += arrived
+
+                    with open('all_data.csv', 'a', newline='') as csvfile:
+                        writer = csv.writer(csvfile, delimiter=',', quotechar='|', quoting=csv.QUOTE_MINIMAL)
+                        writer.writerow([w_pos, pow_pos, w_vis, pow_vis, goal, vision_pc, time_elapsed, is_success])
+
+                    env.restart()
+                    
+                with open('avg_data.csv', 'a', newline='') as csvfile:
+                    writer = csv.writer(csvfile, delimiter=',', quotechar='|', quoting=csv.QUOTE_MINIMAL)
+                    writer.writerow([w_pos, pow_pos, w_vis, pow_vis, vision_pc_total, max_vis, min_vis, time_elapsed_total, is_succes_total])
