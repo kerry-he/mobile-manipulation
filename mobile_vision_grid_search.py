@@ -207,7 +207,7 @@ load_iter = 0
 curr_iter = 0
 
 env = swift.Swift()
-env.launch(realtime=True)
+env.launch(realtime=False, headless=True)
 
 for w_pos in w_pos_list:
     for pow_pos in pow_pos_list:
