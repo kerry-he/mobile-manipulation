@@ -159,15 +159,16 @@ for i in range(1000):
 
             panda.qd[:n] = qd[:n]
 
-            env.step(dt if CURRENT_ALG != Alg.MoveIt else controller.prev_timestep)
+            current_dt = dt if CURRENT_ALG != Alg.MoveIt else controller.prev_timestep
+            env.step(current_dt)
 
             _e = timeit.default_timer()
 
             total_seen += NUM_OBJECTS - sum(occluded)
 
             total += NUM_OBJECTS
-            time += dt
-            time_blocking = np.add(dt * np.array(occluded), time_blocking)
+            time += current_dt
+            time_blocking = np.add(current_dt * np.array(occluded), time_blocking)
 
             if time > 60:
                 break
@@ -184,7 +185,10 @@ for i in range(1000):
     print(f"Completed {i}/1000")
  
     FILE = open(f"{CURRENT_ALG}_{NUM_OBJECTS}", 'a')
-    FILE.write(f"{time}, {','.join([str(x) for x in time_blocking])}\n")
+    if CURRENT_ALG != Alg.MoveIt:
+        FILE.write(f"{time}, {','.join([str(x) for x in time_blocking])}\n")
+    else:
+        FILE.write(f"{time}, {controller.planningTime}, {','.join([str(x) for x in time_blocking])}\n")
     FILE.close()
  
     success += arrived

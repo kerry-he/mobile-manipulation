@@ -26,5 +26,4 @@ class PBVS(BaseController):
 
         occluded, _, _ = self.calcVelocityDamper(panda, collisions, NUM_OBJECTS, n)
 
-
         return qd, arrived, occluded

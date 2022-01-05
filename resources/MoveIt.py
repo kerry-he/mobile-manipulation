@@ -9,7 +9,7 @@ import rospy
 import moveit_commander
 import moveit_msgs.msg
 import geometry_msgs.msg
-import copy
+import copy, timeit
 import spatialmath as sm
 from baseController import BaseController
 
@@ -103,7 +103,10 @@ class kerry_moveit:
         # pose_goal.position.y = 0.1
         # pose_goal.position.z = 0.4
         self.commander.set_pose_target(pose_goal)
+        start_time = timeit.default_timer()
         plan = self.commander.plan()
+        end_time = timeit.default_timer()
+        self.planningTime = end_time - start_time        
         self.commander.execute(plan[1])
         self.plan = plan[1]
         return plan[1]
