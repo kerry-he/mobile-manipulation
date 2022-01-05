@@ -176,7 +176,7 @@ for i in range(1000):
             print(traceback.format_exc())
             break
         
-    controller.cleanup()
+    controller.cleanup(NUM_OBJECTS)
     _total += [total]
     _totalSeen += [total_seen]
     _time += [time]

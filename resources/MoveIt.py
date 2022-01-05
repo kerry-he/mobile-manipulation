@@ -1,3 +1,4 @@
+from base_environment import NUM_OBJECTS
 import roboticstoolbox as rtb
 import spatialmath as sm
 import numpy as np
@@ -44,12 +45,13 @@ class kerry_moveit:
 
 
     def init(self, collisions, camera_pose):
-        for i in collisions:
+        for (index, i) in enumerate(collisions):
             self.add_vision_ray(
                 camera_pose = i._base, 
                 object_pose = camera_pose, 
-                offset = 0)
-
+                offset = 0,
+                index = index)
+        
         self.move_pose(collisions[-1]._base)
         self.curr_time = 0
 
@@ -129,7 +131,7 @@ class kerry_moveit:
         self.commander.execute(plan[1])
         return plan[1]
 
-    def add_vision_ray(self, camera_pose, object_pose, offset = 0.01):
+    def add_vision_ray(self, camera_pose, object_pose, offset = 0.01, index=0):
         '''
         camera_pose: np.array [x, y, z]
         object_pose: np.array [x, y, z]
@@ -155,7 +157,7 @@ class kerry_moveit:
         p.pose.orientation.z = orientation[2]
         p.pose.orientation.w = orientation[3]
 
-        self.scene.add_cylinder(self.cylinder_name, p, length - offset, 0.04)
+        self.scene.add_cylinder(f"{self.cylinder_name}_{index}", p, length - offset, 0.04)
         return self.check_object(cylinder_exists=True)
 
     def check_object(self, cylinder_exists, timeout=4):
@@ -175,6 +177,12 @@ class kerry_moveit:
     def remove_vision_ray(self):
         self.scene.remove_world_object(self.cylinder_name)
         return self.check_object(cylinder_exists=False)
+
+    def cleanup(self):
+
+        for i in range(NUM_OBJECTS):
+            self.scene.remove_world_object(f"{self.cylinder_name}_{i}")
+            self.check_object(cylinder_exists=False)
 
 if __name__ == "__main__":
     rospy.init_node('kerry_MoveIt')

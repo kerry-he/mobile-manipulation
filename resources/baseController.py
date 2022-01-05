@@ -9,7 +9,7 @@ class BaseController():
     def step(self, panda, Tep, NUM_OBJECTS, n, collisions):
         pass
 
-    def cleanup(self):
+    def cleanup(self, NUM_OBJECTS):
         pass
 
     def calcVelocityDamper(self, panda, collisions, NUM_OBJECTS, n, Ain=None, bin=None):
