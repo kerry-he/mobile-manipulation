@@ -152,7 +152,7 @@ class kerry_moveit(BaseController):
         p.header.frame_id = self.commander.get_planning_frame()
 
         center = (object_pose + camera_pose)/2
-        length = np.linalg.norm(object_pose - camera_pose)
+        length = 2 #np.linalg.norm(object_pose - camera_pose)
         cylinder_orientation_vector_z = (object_pose - camera_pose) / length
         center_offset = -1 * cylinder_orientation_vector_z * (offset/2)
         axis = np.cross(np.array([0,0,1]), cylinder_orientation_vector_z)
