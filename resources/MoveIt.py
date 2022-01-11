@@ -1,4 +1,4 @@
-from base_environment import NUM_OBJECTS
+# from base_environment import NUM_OBJECTS
 import roboticstoolbox as rtb
 import spatialmath as sm
 import numpy as np
@@ -15,7 +15,7 @@ import spatialmath as sm
 from baseController import BaseController
 
 
-class kerry_moveit:
+class kerry_moveit(BaseController):
 
     def __init__(self):
         
@@ -45,14 +45,19 @@ class kerry_moveit:
 
 
     def init(self, collisions, camera_pose):
+        rospy.init_node('kerry_MoveIt')
+
         for (index, i) in enumerate(collisions):
+            # print(i._base, camera_pose, i._base[:3, 3])
             self.add_vision_ray(
-                camera_pose = i._base, 
-                object_pose = camera_pose, 
+                camera_pose = camera_pose, 
+                object_pose = i._base[:3, 3], 
                 offset = 0,
                 index = index)
-        
-        self.move_pose(collisions[-1]._base)
+
+        position = collisions[-1]._base[:3, 3]
+        orientation = sm.UnitQuaternion(collisions[-1]._base[:3, :3]).A
+        self.move_pose(position, orientation)
         self.curr_time = 0
 
     def step(self, panda, Tep, NUM_OBJECTS, n, collisions):
@@ -61,9 +66,9 @@ class kerry_moveit:
         qd = step.velocities
 
         self.index += 1
-        arrived = self.index == len(self.plan.joint_trajectory.points)
+        arrived = self.index == len(self.plan.joint_trajectory.points) - 1
 
-        occluded, _, _ = self.calcVelocityDamper(collisions, NUM_OBJECTS, n)
+        occluded, _, _ = self.calcVelocityDamper(panda, collisions, NUM_OBJECTS, n)
 
         time_from_start = step.time_from_start.secs + step.time_from_start.nsecs/1000000000
         self.prev_timestep = time_from_start - self.curr_time
@@ -91,13 +96,19 @@ class kerry_moveit:
         self.commander.execute(plan)
         return plan
 
-    def move_pose(self, pose):
+    def move_pose(self, pose, quaternion):
         
         pose_goal = self.commander.get_current_pose().pose
 
         pose_goal.position.x = pose[0]
         pose_goal.position.y = pose[1]
         pose_goal.position.z = pose[2]
+
+        # scalar part should be first
+        pose_goal.orientation.w = quaternion[0]
+        pose_goal.orientation.x = quaternion[1]
+        pose_goal.orientation.y = quaternion[2]
+        pose_goal.orientation.z = quaternion[3]
 
         # pose_goal = geometry_msgs.msg.Pose()
         # pose_goal.orientation.w = 1.0
@@ -171,6 +182,7 @@ class kerry_moveit:
                 return True
             # Sleep so that we give other threads time on the processor
             rospy.sleep(0.1)
+
             seconds = rospy.get_time()
         return False
 
@@ -178,11 +190,13 @@ class kerry_moveit:
         self.scene.remove_world_object(self.cylinder_name)
         return self.check_object(cylinder_exists=False)
 
-    def cleanup(self):
+    def cleanup(self, NUM_OBJECTS):
 
         for i in range(NUM_OBJECTS):
             self.scene.remove_world_object(f"{self.cylinder_name}_{i}")
             self.check_object(cylinder_exists=False)
+
+        self.index = 0
 
 if __name__ == "__main__":
     rospy.init_node('kerry_MoveIt')
