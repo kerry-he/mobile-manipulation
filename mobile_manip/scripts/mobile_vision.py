@@ -207,7 +207,7 @@ class MobileManipController:
             # and not blocking the line-of-sight
             # print(np.linalg.norm(self.wTep.t - trans) < et / 3, et > 0.175, min(distance) > 0.1)
             # print(np.linalg.norm(self.wTep.t - trans), et, min(distance))
-            if np.linalg.norm(self.wTep.t - trans) < et /   3 and et > 0.175 and min(distance) > 0.1:
+            if np.linalg.norm(self.wTep.t - trans) < et / 3 and et > 0.175 and min(distance) > 0.1:
                 self.wTep.A[:3, 3] = trans + self.wTep.R @ np.array([0.045, 0, 0])
                 self.wTep_waypoint.A[:3, 3] = trans + self.wTep.R @ np.array([-0.1, 0, 0])
                 self.seen_count += 1
@@ -238,7 +238,7 @@ class MobileManipController:
         # Calculate using Jesse's controller
         # start_time = timeit.default_timer()
         if self.controller == "proposed":
-            arrived, qd, qd_cam = step_proposed(self.fetch, self.fetch_cam, wTep.A, self.table, self.centroid_sight)
+            arrived, qd, qd_cam = step_robot(self.fetch, self.fetch_cam, wTep.A, self.table, self.centroid_sight)
         elif self.controller == "pcamera":
             arrived, qd, qd_cam = step_p_camera(self.fetch, self.fetch_cam, wTep.A, self.table)
         elif self.controller == "holistic":
@@ -274,12 +274,15 @@ class MobileManipController:
         time = rospy.Time.now().to_sec() - self.start_time
         # print(_et, time, self.timeout)  
 
-        if arrived or time >= self.timeout:
+        if arrived:
             if not self.waypoint_arrived:
                 self.waypoint_arrived = True
                 self.timeout = time + 12                
                 print("Reached waypoint")
             else:
+                if time >= self.timeout:
+                    print("Timeout occured: ", time, self.timeout)
+
                 self.stop_robot()
 
                 goal = GripperCommandGoal()
