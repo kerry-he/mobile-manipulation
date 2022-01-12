@@ -21,7 +21,7 @@ pos_w = 10000
 rot_p = 6
 rot_w = 100
 
-col_p = 6
+col_p = 2
 col_w = 10000
 
 PROGRAM_TIME = 0
@@ -29,6 +29,21 @@ considerCollisions = True
 
 
 class Ours(BaseController):
+
+    def changeParameters(self, _pos_p, _pos_w, _rot_p, _rot_w, _col_p, _col_w):
+        global pos_p
+        global pos_w
+        global rot_p
+        global rot_w
+        global col_p
+        global col_w
+
+        pos_p = _pos_p
+        pos_w = _pos_w
+        rot_p = _rot_p
+        rot_w = _rot_w
+        col_p = _col_p
+        col_w = _col_w
 
     def step(self, panda, Tep, NUM_OBJECTS, n, collisions):
         global considerCollisions
@@ -43,8 +58,6 @@ class Ours(BaseController):
         # Spatial error
         e = np.sum(np.abs(np.r_[eTep.t, eTep.rpy() * np.pi / 180]))
         et = np.sum(np.abs(eTep.A[:3, -1]))
-
-
 
         # Calulate the required end-effector spatial velocity for the robot
         # to approach the goal. Gain is set to 1.0
@@ -63,17 +76,21 @@ class Ours(BaseController):
         # Slack component of Q
         Q[n : n + 3, n : n + 3] = pos_w * (1 / np.power(et, pos_p)) * np.eye(3)
 
-        # dealing with gripper orientation
+        # # dealing with gripper orientation
         Q[n + 3 : n + 5, n + 3 : n + 5] = rot_w * (1 / (np.power(et, rot_p))) * np.eye(2)
-        print("et", et)
+        # print("et", et)
+
+        # Q[n:n+3, n:n+3] = (1 / e) * np.eye(3)
+        # Q[n+3:-1, n+3:-1] = (1 / (et * et * et * et * 10000)) * np.eye(2)
+
 
         # make the collisions a soft constraint
         # by introducing a slack term for each of the objects
         for j in range(NUM_OBJECTS):
             Q[-j, -j] = col_w * np.power(et, col_p)        
 
-        Aeq = np.c_[panda.jacobe(panda.q)[:3], np.eye(3), np.zeros((3, 2 + NUM_OBJECTS))]
-        beq = v.reshape((6,))[:3]
+        Aeq = np.c_[panda.jacobe(panda.q)[:3], np.eye(3), np.zeros((3, 2 + NUM_OBJECTS))][:3]
+        beq = v[:3].reshape((3,))
 
         # The inequality constraints for joint limit avoidance
         N_SLACK_TERMS = 3 + 2 + NUM_OBJECTS
@@ -118,11 +135,12 @@ class Ours(BaseController):
 
         gripper_x = panda.fkine(panda.q).A[:3, 0]
         gripper_y = panda.fkine(panda.q).A[:3, 1]
+        u2 = np.cross(z_axis, gripper_y)
         gamma = np.arccos(np.dot(gripper_y, z_axis) / (np.linalg.norm(gripper_y) * np.linalg.norm(z_axis)))
 
         # print(gamma)
 
-        J_face = gripper_x.T @ panda.jacob0(panda.q)[3:]
+        J_face = u2.T @ panda.jacob0(panda.q)[3:]
         J_face = J_face.reshape((1, 7))
 
         c_Aeq = np.c_[J_face, np.zeros((1, N_SLACK_TERMS))]
@@ -140,7 +158,9 @@ class Ours(BaseController):
 
         # The lower and upper bounds on the joint velocity and slack variable
         lb = -np.r_[panda.qdlim[:n], 10 * np.ones(3), 10 * np.ones(1), np.zeros(N_SLACK_TERMS -4)]
+        # lb = -np.r_[panda.qdlim[:n], 10 * np.ones(N_SLACK_TERMS)]
         ub = np.r_[panda.qdlim[:n], 10 * np.ones(N_SLACK_TERMS)]
+
 
         # s = timeit.default_timer()
         qd = qp.solve_qp(Q, c, Ain, bin, Aeq, beq, lb=lb, ub=ub)
