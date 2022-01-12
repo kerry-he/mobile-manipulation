@@ -24,7 +24,7 @@ class Alg(Enum):
     PBVS = 4
     MoveIt = 5
 
-CURRENT_ALG = Alg.MoveIt
+CURRENT_ALG = Alg.Ours
 
 if CURRENT_ALG == Alg.Ours:
     from ours import Ours as Controller
