@@ -3,14 +3,31 @@ class BaseController():
     def __init__(self):
         pass
 
-    def init(self, collisions, cameraPose):
-        pass
+    def init(self, spheres, camera_pose, panda, Tep):
+        return True
 
     def step(self, panda, Tep, NUM_OBJECTS, n, collisions):
         pass
 
     def cleanup(self, NUM_OBJECTS):
         pass
+
+    def isInCollision(self, panda, collision, n):
+        c_Ain, c_bin, d_in = panda.link_collision_damper(
+                collision,
+                panda.q[:n],
+                0.3,
+                0.2,
+                1.0,
+                start=panda.link_dict["panda_link1"],
+                end=panda.link_dict["panda_hand"],
+        )
+        if isinstance(d_in, float):
+            return d_in < 0
+        elif d_in is None:
+            return False
+        else:
+            return min(d_in) < 0
 
     def calcVelocityDamper(self, panda, collisions, NUM_OBJECTS, n, Ain=None, bin=None):
         

@@ -24,7 +24,7 @@ class Alg(Enum):
     PBVS = 4
     MoveIt = 5
 
-CURRENT_ALG = Alg.PBVS
+CURRENT_ALG = Alg.MoveIt
 
 if CURRENT_ALG == Alg.Ours:
     from ours import Ours as Controller
@@ -59,12 +59,25 @@ n = 7
 dt = 0.01
 
 # Make two obstacles with velocities
-camera_pos = np.array([0.5, 0.5, 1.0])
+
+np.random.seed(12345)
+
+controller = Controller()
+
+camera_pos = None
+
+
 
 def spawn_objects(addToEnv=False):
+    global camera_pos
+
+    camera_pos = np.array([np.random.uniform(-1, 1), np.random.uniform(-1, 1), np.random.uniform(0.5, 1.5)])
 
     # spawn objects.
-    for k in range(NUM_OBJECTS):
+    k = 0
+    while k < NUM_OBJECTS:
+    # for k in range(NUM_OBJECTS):
+
         angle = np.random.uniform() * np.pi * 2
         radius = np.random.uniform() / 4 + 0.25
         target_pos = np.array([radius * np.cos(angle), radius * np.sin(angle), 0])
@@ -83,10 +96,13 @@ def spawn_objects(addToEnv=False):
                 base=sm.SE3(middle) * R,
             )
             collisions.append(s0)
-
+            if  k == NUM_OBJECTS - 1:
+                color = [255,0,0]
+            else:
+                color = [0,255,0]
             # Make a target
             target = sg.Sphere(
-                radius=0.02, base=sm.SE3(*target_pos)
+                radius=0.02, base=sm.SE3(*target_pos), color=color
             )
             spheres.append(target)
             env.add(s0)
@@ -94,7 +110,15 @@ def spawn_objects(addToEnv=False):
         else:
             collisions[k]._base = (sm.SE3(middle) * R).A
             spheres[k]._base = sm.SE3(*target_pos).A
-    
+
+        env.step()
+
+        # print(k, "in collision: ", controller.isInCollision(panda, collisions[k], n))
+        # input()
+
+        if addToEnv or not controller.isInCollision(panda, collisions[k], n):
+            k += 1           
+ 
     return spheres[-1]
 
 def transform_between_vectors(a, b):
@@ -110,9 +134,10 @@ def transform_between_vectors(a, b):
 NUM_OBJECTS = int(sys.argv[1])
 print(f"************ NUM OBJECTS = {NUM_OBJECTS} *************")
 
+env.add(panda)
+
 spawn_objects(addToEnv=True)
 
-env.add(panda)
 
 success = 0
 
@@ -122,22 +147,29 @@ _time = []
 
 
 START_RUN = timeit.default_timer()
-np.random.seed(12345)
-
-controller = Controller()
 
 
 for i in range(1000):
     panda.q = panda.qr
 
     target = spawn_objects(addToEnv=False)
-
-    controller.init(collisions, camera_pos)
+    env.step()
+    
+    print(target)
 
     # Set the desired end-effector pose to the location of target
     Tep = panda.fkine(panda.q)
     Tep.A[:3, 3] = target.base.t
     # Tep.A[2, 3] += 0.1
+
+    planned = controller.init(spheres, camera_pos, panda, Tep)
+
+    if not planned:
+        _total += [-1]
+        _totalSeen += [-1]
+        _time += [-1]
+        continue
+
 
     total_seen = 0
     total = 0
@@ -189,6 +221,7 @@ for i in range(1000):
         FILE.write(f"{time}, {','.join([str(x) for x in time_blocking])}\n")
     else:
         FILE.write(f"{time}, {controller.planningTime}, {','.join([str(x) for x in time_blocking])}\n")
+        print(f"{time}, {controller.planningTime}, {','.join([str(x) for x in time_blocking])}\n")
     FILE.close()
  
     success += arrived

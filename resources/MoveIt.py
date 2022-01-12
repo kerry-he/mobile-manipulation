@@ -22,6 +22,7 @@ class kerry_moveit(BaseController):
         # We have to declare all Moveit related stuff before
         # Swift because it takes a while to get everything ready
         # Otherwise spawning objects might not work
+        rospy.init_node('kerry_MoveIt')
         self.commander = moveit_commander.MoveGroupCommander('manipulator')
         self.robot = moveit_commander.RobotCommander()
         self.display_trajectory_publisher = rospy.Publisher(
@@ -40,25 +41,46 @@ class kerry_moveit(BaseController):
         # self.panda.q = self.panda.qr
         # # Add the robot to the simulator
         # self.env.add(self.panda)
-
         self.index = 0
+        self.planningTime = 0
 
 
-    def init(self, collisions, camera_pose):
-        rospy.init_node('kerry_MoveIt')
+    def init(self, spheres, camera_pose, panda, Tep):
+        
+        time.sleep(3)
+        for offset in np.linspace(0, 0.5, num=10):
 
-        for (index, i) in enumerate(collisions):
-            # print(i._base, camera_pose, i._base[:3, 3])
-            self.add_vision_ray(
-                camera_pose = camera_pose, 
-                object_pose = i._base[:3, 3], 
-                offset = 0,
-                index = index)
+            self.move_joint_angle(panda.qr)
 
-        position = collisions[-1]._base[:3, 3]
-        orientation = sm.UnitQuaternion(collisions[-1]._base[:3, :3]).A
-        self.move_pose(position, orientation)
-        self.curr_time = 0
+            for (index, i) in enumerate(spheres):
+                # print(i._base, camera_pose, i._base[:3, 3])
+                success = self.add_vision_ray(
+                    camera_pose = camera_pose, 
+                    object_pose = i._base[:3, 3], 
+                    offset = offset,
+                    index = index)            
+
+            position = Tep.A[:3, 3]
+            orientation = sm.UnitQuaternion(Tep.A[:3, :3]).A
+
+            success = self.move_pose(position, orientation)
+            self.curr_time = 0
+
+
+            if success:
+                return True
+            else:
+                self.cleanup(len(spheres))    
+        return False
+
+    def move_joint_angle(self, angles):
+        # The go command can be called with joint values, poses, or without any
+        # parameters if you have already set the pose or joint target for the group
+        self.commander.go(angles, wait=True)
+        # Calling ``stop()`` ensures that there is no residual movement
+        self.commander.stop()
+
+
 
     def step(self, panda, Tep, NUM_OBJECTS, n, collisions):
         
@@ -118,11 +140,13 @@ class kerry_moveit(BaseController):
         self.commander.set_pose_target(pose_goal)
         start_time = timeit.default_timer()
         plan = self.commander.plan()
+        
         end_time = timeit.default_timer()
+
         self.planningTime = end_time - start_time        
         self.commander.execute(plan[1])
         self.plan = plan[1]
-        return plan[1]
+        return plan[0]
 
     def play_moveit_plan_swift(self, plan):
         self.panda.q = plan.joint_trajectory.points[0].positions
@@ -152,7 +176,7 @@ class kerry_moveit(BaseController):
         p.header.frame_id = self.commander.get_planning_frame()
 
         center = (object_pose + camera_pose)/2
-        length = 2 #np.linalg.norm(object_pose - camera_pose)
+        length = np.linalg.norm(object_pose - camera_pose)
         cylinder_orientation_vector_z = (object_pose - camera_pose) / length
         center_offset = -1 * cylinder_orientation_vector_z * (offset/2)
         axis = np.cross(np.array([0,0,1]), cylinder_orientation_vector_z)
@@ -168,11 +192,11 @@ class kerry_moveit(BaseController):
         p.pose.orientation.z = orientation[2]
         p.pose.orientation.w = orientation[3]
 
-        self.scene.add_cylinder(f"{self.cylinder_name}_{index}", p, length - offset, 0.04)
-        return self.check_object(cylinder_exists=True)
+        self.scene.add_cylinder(f"{self.cylinder_name}_{index}", p, length - offset, 0.001)
+        return self.check_object(cylinder_exists=True, name = f"{self.cylinder_name}_{index}")
 
-    def check_object(self, cylinder_exists, timeout=4):
-        cylinder_name = self.cylinder_name
+    def check_object(self, cylinder_exists, name, timeout=4):
+        cylinder_name = name
         start = rospy.get_time()
         seconds = rospy.get_time()
         while (seconds - start < timeout) and not rospy.is_shutdown():
@@ -194,7 +218,7 @@ class kerry_moveit(BaseController):
 
         for i in range(NUM_OBJECTS):
             self.scene.remove_world_object(f"{self.cylinder_name}_{i}")
-            self.check_object(cylinder_exists=False)
+            self.check_object(cylinder_exists=False, name = f"{self.cylinder_name}_{i}")
 
         self.index = 0
 
