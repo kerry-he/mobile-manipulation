@@ -219,7 +219,7 @@ for (index_so_far, (pos_p, pos_w, rot_p, rot_w, col_p, col_w)) in enumerate(prod
                 time += current_dt
                 time_blocking = np.add(current_dt * np.array(occluded), time_blocking)
 
-                if time > 60:
+                if time > 10:
                     break
             except Exception as e:
                 print(traceback.format_exc())
