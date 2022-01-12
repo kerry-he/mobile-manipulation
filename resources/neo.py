@@ -30,16 +30,17 @@ panda = rtb.models.Panda()
 
 # Set joint angles to ready configuration
 panda.q = panda.qr
+panda.q[-1] = 1.5
 
 # Number of joint in the panda which we are controlling
 n = 7
 
 # Make two obstacles with velocities
 camera_pos = np.array([0.0, 0.0, 1.0])
-target_pos = np.array([0.5, -0.3, 0.0])
+target_pos = np.array([0.3, -0.3, 0.35])
 middle = (camera_pos + target_pos) / 2
 R, _, _ = transform_between_vectors(np.array([0., 0., 1.]), camera_pos - target_pos)
-print(sm.SE3(middle) * R)
+
 s0 = sg.Cylinder(
     radius=0.001, 
     length=np.linalg.norm(camera_pos - target_pos), 
@@ -61,6 +62,10 @@ Tep = panda.fkine(panda.q)
 Tep.A[:3, 3] = target.base.t
 # Tep.A[2, 3] += 0.1
 
+ax_goal = sg.Axes(0.1)
+env.add(ax_goal)
+ax_goal._base = Tep.A
+
 
 def step():
     # The pose of the Panda's end-effector
@@ -75,7 +80,7 @@ def step():
 
     # Calulate the required end-effector spatial velocity for the robot
     # to approach the goal. Gain is set to 1.0
-    v, arrived = rtb.p_servo(Te, Tep, 0.5, 0.01)
+    v, arrived = rtb.p_servo(Te, Tep, 1.0, 0.01)
 
     # Gain term (lambda) for control minimisation
     Y = 0.01
@@ -90,11 +95,10 @@ def step():
     Q[n:n+3, n:n+3] = (1 / e) * np.eye(3)
     Q[n+3:-1, n+3:-1] = (1 / (et * et * et * et * 10000)) * np.eye(3)
     Q[-1, -1] = et * et * et * et * et * 100
-    print(et * et * et * et * et * 100)
 
     # The equality contraints
-    Aeq = np.c_[panda.jacobe(panda.q), np.eye(6), np.zeros((6, 1))]
-    beq = v.reshape((6,))
+    Aeq = np.c_[panda.jacobe(panda.q), np.eye(6), np.zeros((6, 1))][:3]
+    beq = v[:3].reshape((3,))
 
     # The inequality constraints for joint limit avoidance
     Ain = np.zeros((n + 7, n + 7))
@@ -134,6 +138,42 @@ def step():
             # Stack the inequality constraints
             Ain = np.r_[Ain, c_Ain]
             bin = np.r_[bin, c_bin]
+
+
+    # Get robot gripper z axis
+    gripper_angle_limit = np.deg2rad(45)
+
+    gripper_z = panda.fkine(panda.q).A[:3, 2]
+    z_axis = np.array([0, 0, 1])
+
+    beta = np.arccos(np.dot(-gripper_z, z_axis) / (np.linalg.norm(gripper_z) * np.linalg.norm(z_axis)))
+
+    u = np.cross(gripper_z, z_axis)
+
+    J_cone = u.T @ panda.jacob0(panda.q)[3:]
+    J_cone = J_cone.reshape((1, 7))
+
+    damper = 1.0 * (np.cos(beta) - np.cos(gripper_angle_limit)) / (1 - np.cos(gripper_angle_limit))
+
+    c_Ain = np.c_[J_cone, np.zeros((1, 7))]
+    Ain = np.r_[Ain, c_Ain]
+    bin = np.r_[bin, damper]
+    # print(beta * 180 / 3.14)
+
+
+    gripper_x = panda.fkine(panda.q).A[:3, 0]
+    gripper_y = panda.fkine(panda.q).A[:3, 1]
+    gamma = np.arccos(np.dot(gripper_y, z_axis) / (np.linalg.norm(gripper_y) * np.linalg.norm(z_axis)))
+
+    print(gamma)
+
+    J_face = gripper_x.T @ panda.jacob0(panda.q)[3:]
+    J_face = J_face.reshape((1, 7))
+
+    c_Aeq = np.c_[J_face, np.zeros((1, 7))]
+    Aeq = np.r_[Aeq, c_Aeq]
+    beq = np.r_[beq, np.cos(gamma)]
+
 
     # Linear component of objective function: the manipulability Jacobian
     c = np.r_[-panda.jacobm(panda.q).reshape((n,)), np.zeros(7)]
