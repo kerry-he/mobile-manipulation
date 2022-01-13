@@ -44,7 +44,7 @@ all_times = []
 
 # Launch the simulator Swift
 env = swift.Swift()
-env.launch(realtime=False, headless=True)
+env.launch(realtime=True, headless=False)
 
 # Create a Panda robot object
 panda = rtb.models.Panda()
@@ -143,23 +143,39 @@ success = 0
 
 START_RUN = timeit.default_timer()
 
-pos_power = [2,4,6]
-pos_weight = [1, 100, 10000]
+pos_power = [3,4,5]
+pos_weight = [1000, 10000, 100000]
 
-rot_power = [2,4,6]
-rot_weight = [1,100,10000]
+# some slack on this
+rot_power = [3,4,5]
+rot_weight = [1000, 10000, 100000]
 
-col_power = [2,4,6]
-col_weight = [1, 100, 10000, 100000]
+col_power = [4,5,6]
+col_weight = [10, 100, 1000]
+
+# slack_power = [2,4,6, 1]
+# slack_weight = [1, 100, 10000, 1000000]
 
 PROGRAM_TIME = 0
 
 ALL_COMBOS = product(pos_power, pos_weight, rot_power, rot_weight, col_power, col_weight)
 total_length = np.prod([len(l) for l in [pos_power, pos_weight, rot_power, rot_weight, col_power, col_weight]])
+print("total_length", total_length)
+QUARTILE = int(sys.argv[2])
+
+start_index = np.floor((QUARTILE / 4) * total_length)
+end_index = np.ceil(((QUARTILE + 1) / 4) * total_length)
 
 for (index_so_far, (pos_p, pos_w, rot_p, rot_w, col_p, col_w)) in enumerate(product(pos_power, pos_weight, rot_power, rot_weight, col_power, col_weight)):
-
     print("\% complete", 100 * index_so_far / total_length)
+    # print(index_so_far, start_index)
+
+    if index_so_far < start_index:
+        continue
+    elif index_so_far > end_index:
+        break
+
+
     success = 0
     _total = []
     _totalSeen = []
@@ -205,6 +221,13 @@ for (index_so_far, (pos_p, pos_w, rot_p, rot_w, col_p, col_w)) in enumerate(prod
 
                 _s = timeit.default_timer()
                 qd, arrived, occluded = controller.step(panda, Tep, NUM_OBJECTS, n, collisions)
+                # if qd is None:
+                #     _total += [-1]
+                #     _totalSeen += [-1]
+                #     _time += [-1]
+                #     arrived = False
+                #     break
+
 
                 panda.qd[:n] = qd[:n]
 
@@ -219,7 +242,7 @@ for (index_so_far, (pos_p, pos_w, rot_p, rot_w, col_p, col_w)) in enumerate(prod
                 time += current_dt
                 time_blocking = np.add(current_dt * np.array(occluded), time_blocking)
 
-                if time > 10:
+                if time > 60:
                     break
             except Exception as e:
                 print(traceback.format_exc())
@@ -232,9 +255,9 @@ for (index_so_far, (pos_p, pos_w, rot_p, rot_w, col_p, col_w)) in enumerate(prod
         _timeBlocking = np.add(_timeBlocking, time_blocking)
         success += arrived
 
-    with open('avg_data.csv', 'a', newline='') as csvfile:
+    with open(f'slack_avg_data_{QUARTILE}.csv', 'a', newline='') as csvfile:
         writer = csv.writer(csvfile, delimiter=',', quotechar='|', quoting=csv.QUOTE_MINIMAL)
 
         vision = np.divide(_totalSeen, _total)
         average_vision = np.mean(vision)
-        writer.writerow([pos_p, pos_w, rot_p, rot_w, col_p, col_w, average_vision*NUM_OBJECTS, np.max(vision)*NUM_OBJECTS, np.min(vision)*NUM_OBJECTS, sum(_time), success, _timeBlocking])
+        writer.writerow([pos_p, pos_w, rot_p, rot_w, col_p, col_w,  average_vision*NUM_OBJECTS, np.max(vision)*NUM_OBJECTS, np.min(vision)*NUM_OBJECTS, sum(_time), success, _timeBlocking])

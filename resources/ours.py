@@ -24,6 +24,7 @@ rot_w = 1
 col_p = 2
 col_w = 10000
 
+
 PROGRAM_TIME = 0
 considerCollisions = True
 
@@ -65,9 +66,12 @@ class Ours(BaseController):
         # Gain term (lambda) for control minimisation
         Y = 0.01
 
+        # The inequality constraints for joint limit avoidance
+        N_SLACK_TERMS = 3 + 1 + NUM_OBJECTS
+
         # Quadratic component of objective function
         # joint angles + (position ) + number of objects + gripper constraint
-        Q = np.eye(n + 3 + 2 + NUM_OBJECTS)
+        Q = np.eye(n + N_SLACK_TERMS)
 
         # Joint velocity component of Q
         Q[:n, :n] *= Y
@@ -75,25 +79,17 @@ class Ours(BaseController):
         # Slack component of Q
         Q[n : n + 3, n : n + 3] = pos_w * (1 / np.power(et, pos_p)) * np.eye(3)
 
-        # # dealing with gripper orientation
-        Q[n + 3 : n + 5, n + 3 : n + 5] = rot_w * (1 / (np.power(et, rot_p))) * np.eye(2)
-        # print("et", et)
-
-        # Q[n:n+3, n:n+3] = (1 / e) * np.eye(3)
-        # Q[n+3:-1, n+3:-1] = (1 / (et * et * et * et * 10000)) * np.eye(2)
-
+        # 4th is equality
+        Q[n + 3 : n + 4, n + 3 : n + 4] = rot_w * (1 / (np.power(et, rot_p))) * np.eye(1)
 
         # make the collisions a soft constraint
         # by introducing a slack term for each of the objects
-        # for j in range(1,NUM_OBJECTS+1):
-        #     Q[-j, -j] = col_w * np.power(et, col_p)        
-        Q[-1, -1] = et * et * et * et * et * 100
+        for j in range(1,NUM_OBJECTS+1):
+            Q[-j, -j] = col_w * np.power(et, col_p)        
+        # Q[-1, -1] = et * et * et * et * et * 100
 
-        Aeq = np.c_[panda.jacobe(panda.q)[:3], np.eye(3), np.zeros((3, 2 + NUM_OBJECTS))][:3]
+        Aeq = np.c_[panda.jacobe(panda.q)[:3], np.eye(3), np.zeros((3, 1 + NUM_OBJECTS))][:3]
         beq = v[:3].reshape((3,))
-
-        # The inequality constraints for joint limit avoidance
-        N_SLACK_TERMS = 3 + 2 + NUM_OBJECTS
 
         Ain = np.zeros((n + N_SLACK_TERMS, n + N_SLACK_TERMS))
         bin = np.zeros(n + N_SLACK_TERMS)
@@ -125,9 +121,6 @@ class Ours(BaseController):
         damper = 1.0 * (np.cos(beta) - np.cos(gripper_angle_limit)) / (1 - np.cos(gripper_angle_limit))
 
         c_Ain = np.c_[J_cone, np.zeros((1, N_SLACK_TERMS))]
-
-        #5th slack term
-        c_Ain[0, 7+3+1] = -1
 
         Ain = np.r_[Ain, c_Ain]
         bin = np.r_[bin, damper]
@@ -166,7 +159,7 @@ class Ours(BaseController):
         qd = qp.solve_qp(Q, c, Ain, bin, Aeq, beq, lb=lb, ub=ub)
         # e = timeit.default_timer()
 
-        return qd, et < 0.02, [False]*NUM_OBJECTS
+        return qd, et < 0.02, occluded
 
 
     def updateVelDamper(self, c_Ain, c_bin, Ain, bin, NUM_OBJECTS, index):
@@ -174,7 +167,7 @@ class Ours(BaseController):
         slack_matrix[:, index] = -np.ones((c_Ain.shape[0]))
 
         c_Ain = np.c_[
-            c_Ain, np.zeros((c_Ain.shape[0], 5)), slack_matrix
+            c_Ain, np.zeros((c_Ain.shape[0], 4)), slack_matrix
         ]
 
         # Stack the inequality constraints
