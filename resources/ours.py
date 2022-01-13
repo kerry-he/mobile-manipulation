@@ -15,18 +15,17 @@ from itertools import product
 import csv, timeit
 from baseController import BaseController
 
-pos_p = 2
+pos_p = 4
 pos_w = 10000
 
-rot_p = 6
-rot_w = 100
+rot_p = 4
+rot_w = 1
 
 col_p = 2
 col_w = 10000
 
 PROGRAM_TIME = 0
 considerCollisions = True
-
 
 class Ours(BaseController):
 
@@ -86,8 +85,9 @@ class Ours(BaseController):
 
         # make the collisions a soft constraint
         # by introducing a slack term for each of the objects
-        for j in range(NUM_OBJECTS):
-            Q[-j, -j] = col_w * np.power(et, col_p)        
+        # for j in range(1,NUM_OBJECTS+1):
+        #     Q[-j, -j] = col_w * np.power(et, col_p)        
+        Q[-1, -1] = et * et * et * et * et * 100
 
         Aeq = np.c_[panda.jacobe(panda.q)[:3], np.eye(3), np.zeros((3, 2 + NUM_OBJECTS))][:3]
         beq = v[:3].reshape((3,))
@@ -166,7 +166,7 @@ class Ours(BaseController):
         qd = qp.solve_qp(Q, c, Ain, bin, Aeq, beq, lb=lb, ub=ub)
         # e = timeit.default_timer()
 
-        return qd, et < 0.02, occluded
+        return qd, et < 0.02, [False]*NUM_OBJECTS
 
 
     def updateVelDamper(self, c_Ain, c_bin, Ain, bin, NUM_OBJECTS, index):
