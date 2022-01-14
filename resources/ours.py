@@ -1,3 +1,4 @@
+
 #!/usr/bin/env python
 """
 @author Jesse Haviland
@@ -18,11 +19,11 @@ from baseController import BaseController
 pos_p = 4
 pos_w = 10000
 
-rot_p = 4
+rot_p = 1
 rot_w = 1
 
 col_p = 2
-col_w = 10000
+col_w = 100000
 
 
 PROGRAM_TIME = 0
@@ -106,7 +107,7 @@ class Ours(BaseController):
         Ain[:n, :n], bin[:n] = panda.joint_velocity_damper(ps, pi, n)
 
         # Get robot gripper z axis
-        gripper_angle_limit = np.deg2rad(45)
+        gripper_angle_limit = np.deg2rad(60)
 
         gripper_z = panda.fkine(panda.q).A[:3, 2]
         z_axis = np.array([0, 0, 1])
