@@ -16,13 +16,14 @@ import csv, timeit
 from baseController import BaseController
 
 pos_p = 4
-pos_w = 10000
+pos_w = 100000
 
-rot_p = 4
+rot_p = 1
 rot_w = 1
 
-col_p = 2
-col_w = 10000
+col_p = 1
+col_w = 100000
+
 
 
 PROGRAM_TIME = 0
@@ -85,8 +86,12 @@ class Ours(BaseController):
         # make the collisions a soft constraint
         # by introducing a slack term for each of the objects
         for j in range(1,NUM_OBJECTS+1):
-            Q[-j, -j] = col_w * np.power(et, col_p)        
-        # Q[-1, -1] = et * et * et * et * et * 100
+            Q[-j, -j] = 1000000
+
+        # 3 objects, 3rd index -> -1
+                    # 2nd index -> 2
+                    # 1st index -> -3
+        Q[-1,-1] = col_w * np.power(et, col_p)    
 
         Aeq = np.c_[panda.jacobe(panda.q)[:3], np.eye(3), np.zeros((3, 1 + NUM_OBJECTS))][:3]
         beq = v[:3].reshape((3,))
@@ -106,7 +111,7 @@ class Ours(BaseController):
         Ain[:n, :n], bin[:n] = panda.joint_velocity_damper(ps, pi, n)
 
         # Get robot gripper z axis
-        gripper_angle_limit = np.deg2rad(45)
+        gripper_angle_limit = np.deg2rad(30)
 
         gripper_z = panda.fkine(panda.q).A[:3, 2]
         z_axis = np.array([0, 0, 1])
@@ -153,7 +158,6 @@ class Ours(BaseController):
         lb = -np.r_[panda.qdlim[:n], 10 * np.ones(3), 10 * np.ones(1), np.zeros(N_SLACK_TERMS -4)]
         # lb = -np.r_[panda.qdlim[:n], 10 * np.ones(N_SLACK_TERMS)]
         ub = np.r_[panda.qdlim[:n], 10 * np.ones(N_SLACK_TERMS)]
-
 
         # s = timeit.default_timer()
         qd = qp.solve_qp(Q, c, Ain, bin, Aeq, beq, lb=lb, ub=ub)

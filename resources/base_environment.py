@@ -16,6 +16,7 @@ import csv
 import sys
 import timeit
 from enum import Enum
+import copy
 
 class Alg(Enum):
     Ours = 1
@@ -24,7 +25,7 @@ class Alg(Enum):
     PBVS = 4
     MoveIt = 5
 
-CURRENT_ALG = Alg.Ours
+CURRENT_ALG = Alg.NEO
 
 if CURRENT_ALG == Alg.Ours:
     from ours import Ours as Controller
@@ -60,7 +61,7 @@ dt = 0.01
 
 # Make two obstacles with velocities
 
-np.random.seed(12345)
+np.random.seed(1337)
 
 controller = Controller()
 
@@ -78,9 +79,10 @@ def spawn_objects(addToEnv=False):
     while k < NUM_OBJECTS:
     # for k in range(NUM_OBJECTS):
 
-        angle = np.random.uniform() * np.pi * 2
-        radius = np.random.uniform() / 4 + 0.25
-        target_pos = np.array([radius * np.cos(angle), radius * np.sin(angle), 0])
+        angle = np.random.uniform(0, 2 * np.pi)
+        radius = np.random.uniform(0.4, 0.7)
+        height = np.random.uniform(0, 0.5)
+        target_pos = np.array([radius * np.cos(angle), radius * np.sin(angle), height])
 
         middle = (camera_pos + target_pos) / 2
         R, _, _ = transform_between_vectors(
@@ -144,23 +146,37 @@ success = 0
 _total = []
 _totalSeen = []
 _time = []
+_manipulability = []
 
 
 START_RUN = timeit.default_timer()
 
 
-for i in range(1000):
+for i in range(10):
+    mean_manip = []
     panda.q = panda.qr
 
     target = spawn_objects(addToEnv=False)
     env.step()
-    
-    print(target)
 
     # Set the desired end-effector pose to the location of target
-    Tep = panda.fkine(panda.q)
+    current_pose = panda.fkine(panda.q)
+    Tep = copy.deepcopy(current_pose)
     Tep.A[:3, 3] = target.base.t
     # Tep.A[2, 3] += 0.1
+
+    gripper_x_desired = target.base.t - current_pose.A[:3, 3]
+    gripper_x_desired = gripper_x_desired / np.linalg.norm(gripper_x_desired)
+    gripper_y_desired = np.cross(gripper_x_desired, [0,0,1])
+    gripper_z_desired = [0,0,-1]
+
+    gripper_x_desired = np.cross(gripper_y_desired, gripper_z_desired)
+
+
+    if CURRENT_ALG != Alg.Ours:
+        Tep.A[:3, 0] = gripper_x_desired
+        Tep.A[:3, 1] = gripper_y_desired
+        Tep.A[:3, 2] = gripper_z_desired
 
     planned = controller.init(spheres, camera_pos, panda, Tep)
 
@@ -201,30 +217,36 @@ for i in range(1000):
             total += NUM_OBJECTS
             time += current_dt
             time_blocking = np.add(current_dt * np.array(occluded), time_blocking)
+            mean_manip.append(panda.manipulability(panda.q))
 
             if time > 60:
                 break
         except Exception as e:
             print(traceback.format_exc())
             break
-        
+    
     controller.cleanup(NUM_OBJECTS)
     _total += [total]
     _totalSeen += [total_seen]
     _time += [time]
+    _manipulability.append(np.average(mean_manip))
+
+    # print("manipulability", _manipulability[-1])
+
  
-    print(time, time_blocking)
+    # print(time, time_blocking)
     print(f"Completed {i}/1000")
  
     FILE = open(f"{CURRENT_ALG}_{NUM_OBJECTS}", 'a')
     if CURRENT_ALG != Alg.MoveIt:
-        FILE.write(f"{time}, {','.join([str(x) for x in time_blocking])}\n")
+        FILE.write(f"{_manipulability[-1]}, {time}, {','.join([str(x) for x in time_blocking])}\n")
     else:
-        FILE.write(f"{time}, {controller.planningTime}, {','.join([str(x) for x in time_blocking])}\n")
-        print(f"{time}, {controller.planningTime}, {','.join([str(x) for x in time_blocking])}\n")
+        FILE.write(f"{_manipulability[-1]}, {time}, {controller.planningTime}, {','.join([str(x) for x in time_blocking])}\n")
+        print(f"{_manipulability[-1]}, {time}, {controller.planningTime}, {','.join([str(x) for x in time_blocking])}\n")
     FILE.close()
  
     success += arrived
+    panda.qd = [0]*n
  
 
 vision = np.divide(_totalSeen, _total)

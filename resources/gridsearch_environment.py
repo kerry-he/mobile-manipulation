@@ -24,7 +24,7 @@ class Alg(Enum):
     PBVS = 4
     MoveIt = 5
 
-CURRENT_ALG = Alg.Ours
+CURRENT_ALG = Alg.NEO
 
 if CURRENT_ALG == Alg.Ours:
     from ours import Ours as Controller
@@ -44,7 +44,7 @@ all_times = []
 
 # Launch the simulator Swift
 env = swift.Swift()
-env.launch(realtime=True, headless=False)
+env.launch(realtime=False, headless=True)
 
 # Create a Panda robot object
 panda = rtb.models.Panda()
@@ -182,7 +182,7 @@ for (index_so_far, (pos_p, pos_w, rot_p, rot_w, col_p, col_w)) in enumerate(prod
     _time = []
     _timeBlocking = [0] * NUM_OBJECTS
     np.random.seed(12345)
-    controller.changeParameters(pos_p, pos_w, rot_p, rot_w, col_p, col_w)
+    # controller.changeParameters(pos_p, pos_w, rot_p, rot_w, col_p, col_w)
 
     for i in range(10):
         panda.q = panda.qr
@@ -254,8 +254,9 @@ for (index_so_far, (pos_p, pos_w, rot_p, rot_w, col_p, col_w)) in enumerate(prod
         _time += [time]
         _timeBlocking = np.add(_timeBlocking, time_blocking)
         success += arrived
+        panda.qd = 0
 
-    with open(f'slack_avg_data_{QUARTILE}.csv', 'a', newline='') as csvfile:
+    with open(f'neo_avg_data_{QUARTILE}.csv', 'a', newline='') as csvfile:
         writer = csv.writer(csvfile, delimiter=',', quotechar='|', quoting=csv.QUOTE_MINIMAL)
 
         vision = np.divide(_totalSeen, _total)

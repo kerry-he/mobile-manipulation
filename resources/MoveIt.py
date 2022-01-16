@@ -14,6 +14,7 @@ import copy, timeit
 import spatialmath as sm
 from baseController import BaseController
 
+CONSIDER_COLLISIONS = True
 
 class kerry_moveit(BaseController):
 
@@ -52,13 +53,14 @@ class kerry_moveit(BaseController):
 
             self.move_joint_angle(panda.qr)
 
-            for (index, i) in enumerate(spheres):
-                # print(i._base, camera_pose, i._base[:3, 3])
-                success = self.add_vision_ray(
-                    camera_pose = camera_pose, 
-                    object_pose = i._base[:3, 3], 
-                    offset = offset,
-                    index = index)            
+            if CONSIDER_COLLISIONS:
+                for (index, i) in enumerate(spheres):
+                    # print(i._base, camera_pose, i._base[:3, 3])
+                    success = self.add_vision_ray(
+                        camera_pose = camera_pose, 
+                        object_pose = i._base[:3, 3], 
+                        offset = offset,
+                        index = index)            
 
             position = Tep.A[:3, 3]
             orientation = sm.UnitQuaternion(Tep.A[:3, :3]).A
@@ -67,10 +69,11 @@ class kerry_moveit(BaseController):
             self.curr_time = 0
 
 
-            if success:
-                return True
-            else:
-                self.cleanup(len(spheres))    
+            if not success:
+                self.cleanup(len(spheres))
+            
+            return success
+                    
         return False
 
     def move_joint_angle(self, angles):
