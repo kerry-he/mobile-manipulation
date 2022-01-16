@@ -68,11 +68,10 @@ class kerry_moveit(BaseController):
             success = self.move_pose(position, orientation)
             self.curr_time = 0
 
-
-            if not success:
-                self.cleanup(len(spheres))
-            
-            return success
+            if success:
+                return True
+            else:
+                self.cleanup(len(spheres))  
                     
         return False
 
