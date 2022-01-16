@@ -1,3 +1,4 @@
+
 #!/usr/bin/env python
 """
 @author Jesse Haviland
@@ -111,7 +112,7 @@ class Ours(BaseController):
         Ain[:n, :n], bin[:n] = panda.joint_velocity_damper(ps, pi, n)
 
         # Get robot gripper z axis
-        gripper_angle_limit = np.deg2rad(30)
+        gripper_angle_limit = np.deg2rad(60)
 
         gripper_z = panda.fkine(panda.q).A[:3, 2]
         z_axis = np.array([0, 0, 1])
