@@ -49,21 +49,28 @@ class kerry_moveit(BaseController):
     def init(self, spheres, camera_pose, panda, Tep):
         
         time.sleep(3)
+
+        if CONSIDER_COLLISIONS:
+            for (index, i) in enumerate(spheres[:-1]):
+                # print(i._base, camera_pose, i._base[:3, 3])
+                success = self.add_vision_ray(
+                    camera_pose = camera_pose, 
+                    object_pose = i._base[:3, 3], 
+                    offset = 0,
+                    index = index)            
+
+        position = Tep.A[:3, 3]
+        orientation = sm.UnitQuaternion(Tep.A[:3, :3]).A
+        
         for offset in np.linspace(0, 0.5, num=10):
+            if CONSIDER_COLLISIONS:
+                success = self.add_vision_ray(
+                    camera_pose = camera_pose, 
+                    object_pose = spheres[-1]._base[:3, 3], 
+                    offset = offset,
+                    index = len(spheres) - 1)            
 
             self.move_joint_angle(panda.qr)
-
-            if CONSIDER_COLLISIONS:
-                for (index, i) in enumerate(spheres):
-                    # print(i._base, camera_pose, i._base[:3, 3])
-                    success = self.add_vision_ray(
-                        camera_pose = camera_pose, 
-                        object_pose = i._base[:3, 3], 
-                        offset = offset,
-                        index = index)            
-
-            position = Tep.A[:3, 3]
-            orientation = sm.UnitQuaternion(Tep.A[:3, :3]).A
 
             success = self.move_pose(position, orientation)
             self.curr_time = 0
@@ -71,7 +78,7 @@ class kerry_moveit(BaseController):
             if success:
                 return True
             else:
-                self.cleanup(len(spheres))  
+                self.remove_vision_ray(len(spheres) - 1)
                     
         return False
 
@@ -194,8 +201,8 @@ class kerry_moveit(BaseController):
         p.pose.orientation.z = orientation[2]
         p.pose.orientation.w = orientation[3]
 
-        self.scene.add_cylinder(f"{self.cylinder_name}_{index}", p, length - offset, 0.001)
-        return self.check_object(cylinder_exists=True, name = f"{self.cylinder_name}_{index}")
+        self.scene.add_cylinder(self.generate_cylinder_name(index), p, length - offset, 0.001)
+        return self.check_object(cylinder_exists=True, name = self.generate_cylinder_name(index))
 
     def check_object(self, cylinder_exists, name, timeout=4):
         cylinder_name = name
@@ -212,15 +219,18 @@ class kerry_moveit(BaseController):
             seconds = rospy.get_time()
         return False
 
-    def remove_vision_ray(self):
+    def remove_vision_ray(self, index):
         self.scene.remove_world_object(self.cylinder_name)
         return self.check_object(cylinder_exists=False)
+
+    def generate_cylinder_name(self, index):
+        return f"{self.cylinder_name}_{index}"
 
     def cleanup(self, NUM_OBJECTS):
 
         for i in range(NUM_OBJECTS):
-            self.scene.remove_world_object(f"{self.cylinder_name}_{i}")
-            self.check_object(cylinder_exists=False, name = f"{self.cylinder_name}_{i}")
+            self.scene.remove_world_object(self.generate_cylinder_name(i))
+            self.check_object(cylinder_exists=False, name = self.generate_cylinder_name(i))
 
         self.index = 0
 
