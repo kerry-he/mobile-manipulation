@@ -47,7 +47,7 @@ all_times = []
 
 # Launch the simulator Swift
 env = swift.Swift()
-env.launch(realtime=True, headless=False)
+env.launch(realtime=False, headless=True)
 
 # Create a Panda robot object
 panda = rtb.models.Panda()
@@ -170,7 +170,7 @@ _manipulability = []
 START_RUN = timeit.default_timer()
 
 
-for i in range(10):
+for i in range(1000):
     mean_manip = []
     panda.q = panda.qr
 

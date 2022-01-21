@@ -73,8 +73,6 @@ class kerry_moveit(BaseController):
 
             # orientation = sm.UnitQuaternion(Tep.A[:3, :3]).A
             orientation = R.from_matrix(Tep.A[:3, :3]).as_quat()
-            print(Tep, Tep.A[:3, :3])
-            print(orientation)
             success = self.move_pose(position, orientation)
             self.curr_time = 0
 
@@ -149,7 +147,6 @@ class kerry_moveit(BaseController):
         # pose_goal.position.x = 0.4
         # pose_goal.position.y = 0.1
         # pose_goal.position.z = 0.4
-        print(pose_goal)
         self.commander.set_pose_target(pose_goal)
         start_time = timeit.default_timer()
         plan = self.commander.plan()
