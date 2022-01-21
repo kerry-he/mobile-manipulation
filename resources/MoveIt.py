@@ -58,10 +58,7 @@ class kerry_moveit(BaseController):
                     object_pose = i._base[:3, 3], 
                     offset = 0,
                     index = index)            
-
-        position = Tep.A[:3, 3]
-        orientation = sm.UnitQuaternion(Tep.A[:3, :3]).A
-        
+       
         for offset in np.linspace(0, 0.5, num=10):
             if CONSIDER_COLLISIONS:
                 success = self.add_vision_ray(
@@ -72,6 +69,12 @@ class kerry_moveit(BaseController):
 
             self.move_joint_angle(panda.qr)
 
+            position = Tep.A[:3, 3]
+
+            # orientation = sm.UnitQuaternion(Tep.A[:3, :3]).A
+            orientation = R.from_matrix(Tep.A[:3, :3]).as_quat()
+            print(Tep, Tep.A[:3, :3])
+            print(orientation)
             success = self.move_pose(position, orientation)
             self.curr_time = 0
 
@@ -136,16 +139,17 @@ class kerry_moveit(BaseController):
         pose_goal.position.z = pose[2]
 
         # scalar part should be first
-        pose_goal.orientation.w = quaternion[0]
-        pose_goal.orientation.x = quaternion[1]
-        pose_goal.orientation.y = quaternion[2]
-        pose_goal.orientation.z = quaternion[3]
+        pose_goal.orientation.x = float(quaternion[0])
+        pose_goal.orientation.y = float(quaternion[1])
+        pose_goal.orientation.z = float(quaternion[2])
+        pose_goal.orientation.w = float(quaternion[3])
 
         # pose_goal = geometry_msgs.msg.Pose()
         # pose_goal.orientation.w = 1.0
         # pose_goal.position.x = 0.4
         # pose_goal.position.y = 0.1
         # pose_goal.position.z = 0.4
+        print(pose_goal)
         self.commander.set_pose_target(pose_goal)
         start_time = timeit.default_timer()
         plan = self.commander.plan()
@@ -220,8 +224,8 @@ class kerry_moveit(BaseController):
         return False
 
     def remove_vision_ray(self, index):
-        self.scene.remove_world_object(self.cylinder_name)
-        return self.check_object(cylinder_exists=False)
+        self.scene.remove_world_object(self.generate_cylinder_name(index))
+        return self.check_object(cylinder_exists=False, name=self.generate_cylinder_name(index))
 
     def generate_cylinder_name(self, index):
         return f"{self.cylinder_name}_{index}"
