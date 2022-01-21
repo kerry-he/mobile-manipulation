@@ -18,12 +18,14 @@ import timeit
 from enum import Enum
 import copy
 
+
 class Alg(Enum):
     Ours = 1
     Slack = 2
     NEO = 3
     PBVS = 4
     MoveIt = 5
+
 
 CURRENT_ALG = Alg.MoveIt
 
@@ -68,16 +70,33 @@ controller = Controller()
 camera_pos = None
 
 
-
 def spawn_objects(addToEnv=False):
     global camera_pos
 
-    camera_pos = np.array([np.random.uniform(-1, 1), np.random.uniform(-1, 1), np.random.uniform(0.5, 1.5)])
+    camera_pos = np.array(
+        [
+            np.random.uniform(-1, 1),
+            np.random.uniform(-1, 1),
+            np.random.uniform(0.5, 1.5),
+        ]
+    )
 
     # spawn objects.
     k = 0
+    iterations = 0
     while k < NUM_OBJECTS:
-    # for k in range(NUM_OBJECTS):
+        # for k in range(NUM_OBJECTS):
+        iterations += 1
+        if iterations > 100:
+            camera_pos = np.array(
+                [
+                    np.random.uniform(-1, 1),
+                    np.random.uniform(-1, 1),
+                    np.random.uniform(0.5, 1.5),
+                ]
+            )
+            k = 0
+            iterations = 0
 
         angle = np.random.uniform(0, 2 * np.pi)
         radius = np.random.uniform(0.4, 0.7)
@@ -94,18 +113,16 @@ def spawn_objects(addToEnv=False):
             # line of sight between camera and object we want to avoid
             s0 = sg.Cylinder(
                 radius=0.001,
-                length=2, #np.linalg.norm(camera_pos - target_pos),
+                length=2,  # np.linalg.norm(camera_pos - target_pos),
                 base=sm.SE3(middle) * R,
             )
             collisions.append(s0)
-            if  k == NUM_OBJECTS - 1:
-                color = [255,0,0]
+            if k == NUM_OBJECTS - 1:
+                color = [255, 0, 0]
             else:
-                color = [0,255,0]
+                color = [0, 255, 0]
             # Make a target
-            target = sg.Sphere(
-                radius=0.02, base=sm.SE3(*target_pos), color=color
-            )
+            target = sg.Sphere(radius=0.02, base=sm.SE3(*target_pos), color=color)
             spheres.append(target)
             env.add(s0)
             env.add(target)
@@ -119,9 +136,10 @@ def spawn_objects(addToEnv=False):
         # input()
 
         if addToEnv or not controller.isInCollision(panda, collisions[k], n):
-            k += 1           
- 
+            k += 1
+
     return spheres[-1]
+
 
 def transform_between_vectors(a, b):
     a = a / np.linalg.norm(a)
@@ -167,11 +185,10 @@ for i in range(10):
 
     gripper_x_desired = target.base.t - current_pose.A[:3, 3]
     gripper_x_desired = gripper_x_desired / np.linalg.norm(gripper_x_desired)
-    gripper_y_desired = np.cross(gripper_x_desired, [0,0,1])
-    gripper_z_desired = [0,0,-1]
+    gripper_y_desired = np.cross(gripper_x_desired, [0, 0, 1])
+    gripper_z_desired = [0, 0, -1]
 
     gripper_x_desired = np.cross(gripper_y_desired, gripper_z_desired)
-
 
     if CURRENT_ALG != Alg.Ours:
         Tep.A[:3, 0] = gripper_x_desired
@@ -185,7 +202,6 @@ for i in range(10):
         _totalSeen += [-1]
         _time += [-1]
         continue
-
 
     total_seen = 0
     total = 0
@@ -203,7 +219,9 @@ for i in range(10):
         try:
 
             _s = timeit.default_timer()
-            qd, arrived, occluded = controller.step(panda, Tep, NUM_OBJECTS, n, collisions)
+            qd, arrived, occluded = controller.step(
+                panda, Tep, NUM_OBJECTS, n, collisions
+            )
 
             panda.qd[:n] = qd[:n]
 
@@ -224,7 +242,7 @@ for i in range(10):
         except Exception as e:
             print(traceback.format_exc())
             break
-    
+
     controller.cleanup(NUM_OBJECTS)
     _total += [total]
     _totalSeen += [total_seen]
@@ -233,26 +251,31 @@ for i in range(10):
 
     # print("manipulability", _manipulability[-1])
 
- 
     # print(time, time_blocking)
     print(f"Completed {i}/1000")
- 
-    FILE = open(f"{CURRENT_ALG}_{NUM_OBJECTS}", 'a')
+
+    FILE = open(f"{CURRENT_ALG}_{NUM_OBJECTS}", "a")
     if CURRENT_ALG != Alg.MoveIt:
-        FILE.write(f"{_manipulability[-1]}, {time}, {','.join([str(x) for x in time_blocking])}\n")
+        FILE.write(
+            f"{_manipulability[-1]}, {time}, {','.join([str(x) for x in time_blocking])}\n"
+        )
     else:
-        FILE.write(f"{_manipulability[-1]}, {time}, {controller.planningTime}, {','.join([str(x) for x in time_blocking])}\n")
-        print(f"{_manipulability[-1]}, {time}, {controller.planningTime}, {','.join([str(x) for x in time_blocking])}\n")
+        FILE.write(
+            f"{_manipulability[-1]}, {time}, {controller.planningTime}, {','.join([str(x) for x in time_blocking])}\n"
+        )
+        print(
+            f"{_manipulability[-1]}, {time}, {controller.planningTime}, {','.join([str(x) for x in time_blocking])}\n"
+        )
     FILE.close()
- 
+
     success += arrived
-    panda.qd = [0]*n
- 
+    panda.qd = [0] * n
+
 
 vision = np.divide(_totalSeen, _total)
 average_vision = np.mean(vision)
 
-FILE = open(f"{CURRENT_ALG}_{NUM_OBJECTS}", 'a')
+FILE = open(f"{CURRENT_ALG}_{NUM_OBJECTS}", "a")
 FILE.write(f"{sum(_time)}\n")
 FILE.write(f"{average_vision*NUM_OBJECTS}\n")
 FILE.write(f"{np.min(vision) * NUM_OBJECTS}\n")
