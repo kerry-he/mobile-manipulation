@@ -41,8 +41,7 @@ class MoveIt(BaseController):
         self.planningTime = 0
 
     def move_camera_pose(self, joint_angles):
-        # TODO
-        pass
+        raise NotImplementedError("not sure if this is needed")
 
     def init(self, init_joint_angles, init_head_angle):
 
