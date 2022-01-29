@@ -104,7 +104,6 @@ if __name__ == "__main__":
     controller = Controller()
     
     for run in range(total_runs):
-        Controller.init()
         ax_goal = sg.Axes(0.1)
         
         fetch = rtb.models.Fetch()
@@ -115,6 +114,9 @@ if __name__ == "__main__":
 
         fetch_camera = rtb.models.FetchCamera()
         fetch_camera.q = fetch_camera.qr
+
+        Controller.init(fetch.q, fetch_camera.qr)
+
 
         sight_base = sm.SE3.Ry(np.pi/2) * sm.SE3(0.0, 0.0, 2.5)
         centroid_sight = sg.Cylinder(radius=0.001, 
@@ -162,7 +164,9 @@ if __name__ == "__main__":
             except Exception as e:
                 print(e)
 
-            env.step(dt)
+            current_dt = dt if CURRENT_ALG != Alg.MoveIt else controller.prev_timestep
+
+            env.step(current_dt)
 
             # Reset bases
             base_new = fetch.fkine(fetch._q, end=fetch.links[2], fast=True)
@@ -195,6 +199,7 @@ if __name__ == "__main__":
         fov_pc = fov_count / total_count * 100
         time_elapsed = total_count * dt
         is_success = arrived
+        controller.cleanup()
 
         with open('data_alt.csv', 'a', newline='') as csvfile:
             writer = csv.writer(csvfile, delimiter=',', quotechar='|', quoting=csv.QUOTE_MINIMAL)

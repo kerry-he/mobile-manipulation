@@ -3,6 +3,13 @@ import spatialmath as sm
 from typing import Tuple, list
 
 class BaseController():
+
+    def cleanup(self):
+        pass
+
+    def init(self, init_joint_angles, init_head_angle):
+        pass
+
     def step_robot(self, r, r_cam, Tep, line_of_sight) -> Tuple[bool, list[float], list[float]]:
         pass
     
