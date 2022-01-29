@@ -1,4 +1,0 @@
-python3 mobile_vision_baseline.py
-python3 mobile_vision_grid_search.py
-python3 mobile_vision_holistic_baseline.py
-pthon3 mobile_vision_seperate.py
