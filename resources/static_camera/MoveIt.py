@@ -50,6 +50,8 @@ class kerry_moveit(BaseController):
         
         time.sleep(3)
 
+        self.move_joint_angle(panda.qr)
+
         if CONSIDER_COLLISIONS:
             for (index, i) in enumerate(spheres[:-1]):
                 # print(i._base, camera_pose, i._base[:3, 3])
@@ -67,7 +69,7 @@ class kerry_moveit(BaseController):
                     offset_percentage = offset,
                     index = len(spheres) - 1)            
 
-            self.move_joint_angle(panda.qr)
+            
 
             position = Tep.A[:3, 3]
 
