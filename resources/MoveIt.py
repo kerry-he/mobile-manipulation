@@ -59,12 +59,12 @@ class kerry_moveit(BaseController):
                     offset = 0,
                     index = index)            
        
-        for offset in np.linspace(0, 0.5, num=10):
+        for offset in np.linspace(0, 1, num=10):
             if CONSIDER_COLLISIONS:
                 success = self.add_vision_ray(
                     camera_pose = camera_pose, 
                     object_pose = spheres[-1]._base[:3, 3], 
-                    offset = offset,
+                    offset_percentage = offset,
                     index = len(spheres) - 1)            
 
             self.move_joint_angle(panda.qr)
@@ -176,7 +176,7 @@ class kerry_moveit(BaseController):
         self.commander.execute(plan[1])
         return plan[1]
 
-    def add_vision_ray(self, camera_pose, object_pose, offset = 0.01, index=0):
+    def add_vision_ray(self, camera_pose, object_pose, offset_percentage = 0.01, index=0):
         '''
         camera_pose: np.array [x, y, z]
         object_pose: np.array [x, y, z]
@@ -187,8 +187,9 @@ class kerry_moveit(BaseController):
 
         center = (object_pose + camera_pose)/2
         length = np.linalg.norm(object_pose - camera_pose)
+        offset_distance = offset_percentage * length
         cylinder_orientation_vector_z = (object_pose - camera_pose) / length
-        center_offset = -1 * cylinder_orientation_vector_z * (offset/2)
+        center_offset = -1 * cylinder_orientation_vector_z * (offset_distance/2)
         axis = np.cross(np.array([0,0,1]), cylinder_orientation_vector_z)
         angle = np.arccos(np.dot(np.array([0,0,1]), cylinder_orientation_vector_z))
         angle_axis = sm.SE3.AngleAxis(angle, axis)
@@ -202,7 +203,7 @@ class kerry_moveit(BaseController):
         p.pose.orientation.z = orientation[2]
         p.pose.orientation.w = orientation[3]
 
-        self.scene.add_cylinder(self.generate_cylinder_name(index), p, length - offset, 0.001)
+        self.scene.add_cylinder(self.generate_cylinder_name(index), p, length - offset_distance, 0.05)
         return self.check_object(cylinder_exists=True, name = self.generate_cylinder_name(index))
 
     def check_object(self, cylinder_exists, name, timeout=4):
