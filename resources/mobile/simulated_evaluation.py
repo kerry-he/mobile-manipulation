@@ -1,3 +1,6 @@
+from sqlite3 import Cursor
+from resources.mobile.Holistic import Holistic
+from resources.mobile.PCamera import PCamera
 import swift
 import roboticstoolbox as rtb
 import spatialgeometry as sg
@@ -6,12 +9,33 @@ import qpsolvers as qp
 import numpy as np
 import math
 import csv
-
+from enum import Enum
 from Controllers import *
 
 np.random.seed(1337)
 
+class Alg(Enum):
+    Proposed = 1
+    Separate = 2
+    PCamera = 3
+    Holistic = 4
+    MoveIt = 5
 
+CURRENT_ALG = Alg.Holistic
+
+
+if CURRENT_ALG == Alg.Proposed:
+    from Proposed import Proposed as Controller 
+elif CURRENT_ALG == Alg.Separate:
+    from Separate import Separate as Controller
+elif CURRENT_ALG == Alg.PCamera:
+    from PCamera import PCamera as Controller
+elif CURRENT_ALG == Alg.Holistic:
+    from Holistic import Holistic as Controller
+else:
+    from MoveIt import MoveIt as Controller
+
+    
 def transform_between_vectors(a, b):
     a = a / np.linalg.norm(a)
     b = b / np.linalg.norm(b)
@@ -73,13 +97,14 @@ if __name__ == "__main__":
     env.launch(realtime=False, headless=True)
     # env.launch(realtime=True)
 
-    moving_object = False
     total_runs = 1000
 
     load_run = 0
 
+    controller = Controller()
+    
     for run in range(total_runs):
-
+        Controller.init()
         ax_goal = sg.Axes(0.1)
         
         fetch = rtb.models.Fetch()
@@ -107,18 +132,7 @@ if __name__ == "__main__":
         separate_arrived = False
         dt = 0.025
 
-
-        # vel = 0.06
-        moving_time = 10 # in seconds
-        # direction = np.random.rand(2) * 2 - 1
-        # direction = direction / np.linalg.norm(direction)
-        ang_vel = 0.1 # in rad/dt
-        speed_drop = ang_vel / (moving_time / dt)
-        current_angle = 0
-
-        stop_time = 20 # in seconds
-
-        
+      
         wTep = rand_pose()
         spawn_pose = [wTep.A[0, 3], wTep.A[1, 3]]        
 
@@ -143,24 +157,11 @@ if __name__ == "__main__":
 
         while not arrived:
 
-            if moving_object: 
-                wTep.A[0,3] = spawn_pose[0] + np.sin(current_angle) * 0.15                                      
-                wTep.A[1,3] = spawn_pose[1] + np.cos(current_angle) * 0.15
-
-                current_angle += ang_vel
-
-                min_vel = ang_vel / 50 if dt * total_count < stop_time else 0
-                ang_vel = max(min_vel, ang_vel - speed_drop)
-
-
             try:
-                arrived, fetch.qd, fetch_camera.qd = step_p_camera(fetch, fetch_camera, wTep.A)
-                # if not separate_arrived:
-                #     separate_arrived, fetch.qd, fetch_camera.qd = step_separate_base(fetch, fetch_camera, wTep.A)
-                # else:
-                #     arrived, fetch.qd, fetch_camera.qd = step_separate_arm(fetch, fetch_camera, wTep.A)
+                arrived, fetch.qd, fetch_camera.qd = controller.step(fetch, fetch_camera, wTep.A)
             except Exception as e:
                 print(e)
+
             env.step(dt)
 
             # Reset bases
