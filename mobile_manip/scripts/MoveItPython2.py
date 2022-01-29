@@ -37,6 +37,7 @@ class MoveIt():
             Tep[i/4, i % 4] = sys.argv[i+1]
         
         self.plan_arm(Tep)
+        self.move_group.execute(self.plan)
 
     def angle_axis_to_matrix(self, axis, theta):
         """
@@ -62,18 +63,6 @@ class MoveIt():
         axis = np.cross(a, b)
 
         return self.angle_axis_to_matrix(axis, angle), angle, axis
-
-
-    def step(self, r, r_cam, Tep, centroid_sight):
-        if not self.separate_arrived:
-            self.separate_arrived, qd, camera_qd = self.step_separate_base(r, r_cam, Tep)
-
-            if self.seperate_arrived:
-                self.plan_success = 
-
-            return self.seperate_arrived, qd, camera_qd
-        else:
-            return self.step_separate_arm(r, r_cam, Tep)
 
     def getCameraPosition(self):
         raise NotImplementedError("todo")

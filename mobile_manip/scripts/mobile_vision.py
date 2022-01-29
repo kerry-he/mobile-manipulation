@@ -11,6 +11,8 @@ import spatialmath as sm
 import qpsolvers as qp
 import numpy as np
 import math
+import subprocess
+
 
 from sensor_msgs.msg import JointState
 from std_msgs.msg import String
@@ -150,6 +152,21 @@ class MobileManipController:
         #     self.separate_arrived, qd, qd_cam = step_separate_base(self.fetch, self.fetch_cam, self.wTep.A)
         # else:
         #     arrived, qd, qd_cam = step_separate_arm(self.fetch, self.fetch_cam, self.wTep.A)
+
+
+        arrived = False
+        if not self.separate_arrived:
+            self.separate_arrived, qd, qd_cam = step_separate_base(self.fetch, self.fetch_cam, self.wTep.A)
+        else:
+
+            command = "source TODO; holistop; python MoveItPython2"
+            args = []
+            for i in range(16):
+                args.append(self.wTep.A[i/4, i % 4])
+
+            command = command + " ".join(args)
+
+            ret = subprocess.run(command, capture_output=True, shell=True)
 
 
         qd /= 10
