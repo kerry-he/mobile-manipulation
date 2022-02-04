@@ -1,14 +1,17 @@
 
 
-import numpy as np, math
-import qpsolvers as qp, sys
+import numpy as np
+import math
+import qpsolvers as qp
+import sys
 from scipy.spatial.transform import Rotation as R
 
 import rospy
 import moveit_commander
 import moveit_msgs.msg
 import geometry_msgs.msg
-import copy, timeit
+import copy
+import timeit
 
 CONSIDER_COLLISIONS = True
 
@@ -16,10 +19,10 @@ CONSIDER_COLLISIONS = True
 class MoveIt():
 
     def __init__(self):
-        
+
         rospy.init_node('kerry_MoveIt')
         self.arm_commander = moveit_commander.MoveGroupCommander('manipulator')
-        
+
         self.robot = moveit_commander.RobotCommander()
         self.display_trajectory_publisher = rospy.Publisher(
             '/move_group/display_planned_path',
@@ -35,7 +38,7 @@ class MoveIt():
         Tep = np.eye(4)
         for i in range(16):
             Tep[i/4, i % 4] = sys.argv[i+1]
-        
+
         self.plan_arm(Tep)
         self.move_group.execute(self.plan)
 
@@ -54,7 +57,6 @@ class MoveIt():
                         [2 * (bc - ad), aa + cc - bb - dd, 2 * (cd + ab)],
                         [2 * (bd + ac), 2 * (cd - ab), aa + dd - bb - cc]])
 
-
     def transform_between_vectors(self, a, b):
         a = a / np.linalg.norm(a)
         b = b / np.linalg.norm(b)
@@ -69,17 +71,15 @@ class MoveIt():
 
     def plan_arm(self, Tep):
 
-
         wTc = self.getCameraPosition()
-        
+
         for offset in np.linspace(0, 1, num=10):
             if CONSIDER_COLLISIONS:
                 success = self.add_vision_ray(
-                    camera_pose = wTc[:3, 3], 
-                    object_pose = Tep.A[:3, 3],
-                    offset_percentage = offset,
-                    index = 0)            
-
+                    camera_pose=wTc[:3, 3],
+                    object_pose=Tep.A[:3, 3],
+                    offset_percentage=offset,
+                    index=0)
 
             position = Tep.A[:3, 3]
 
@@ -93,8 +93,7 @@ class MoveIt():
             else:
                 self.remove_vision_ray(0)
 
-
-    def add_vision_ray(self, camera_pose, object_pose, offset_percentage = 0.01, index=0):
+    def add_vision_ray(self, camera_pose, object_pose, offset_percentage=0.01, index=0):
         '''
         camera_pose: np.array [x, y, z]
         object_pose: np.array [x, y, z]
@@ -107,14 +106,16 @@ class MoveIt():
         length = np.linalg.norm(object_pose - camera_pose)
         offset_distance = offset_percentage * length
         cylinder_orientation_vector_z = (object_pose - camera_pose) / length
-        center_offset = -1 * cylinder_orientation_vector_z * (offset_distance/2)
-        axis = np.cross(np.array([0,0,1]), cylinder_orientation_vector_z)
-        angle = np.arccos(np.dot(np.array([0,0,1]), cylinder_orientation_vector_z))
+        center_offset = -1 * cylinder_orientation_vector_z * \
+            (offset_distance/2)
+        axis = np.cross(np.array([0, 0, 1]), cylinder_orientation_vector_z)
+        angle = np.arccos(
+            np.dot(np.array([0, 0, 1]), cylinder_orientation_vector_z))
 
         angle_axis = self.angle_axis_to_matrix(axis, angle)
-        
+
         orientation = R.from_matrix(angle_axis).as_quat()
-        
+
         p.pose.position.x = center[0] + center_offset[0]
         p.pose.position.y = center[1] + center_offset[1]
         p.pose.position.z = center[2] + center_offset[2]
@@ -123,9 +124,9 @@ class MoveIt():
         p.pose.orientation.z = orientation[2]
         p.pose.orientation.w = orientation[3]
 
-        self.scene.add_cylinder(self.generate_cylinder_name(index), p, length - offset_distance, 0.05)
-        return self.check_object(cylinder_exists=True, name = self.generate_cylinder_name(index))
-
+        self.scene.add_cylinder(self.generate_cylinder_name(
+            index), p, length - offset_distance, 0.05)
+        return self.check_object(cylinder_exists=True, name=self.generate_cylinder_name(index))
 
     def check_object(self, cylinder_exists, name, timeout=4):
         cylinder_name = name
@@ -150,7 +151,7 @@ class MoveIt():
         return f"{self.cylinder_name}_{index}"
 
     def move_pose(self, pose, quaternion):
-        
+
         pose_goal = self.commander.get_current_pose().pose
 
         pose_goal.position.x = pose[0]
@@ -171,32 +172,33 @@ class MoveIt():
         self.commander.set_pose_target(pose_goal)
         start_time = timeit.default_timer()
         plan = self.commander.plan()
-        
+
         end_time = timeit.default_timer()
 
-        self.planningTime = end_time - start_time        
+        self.planningTime = end_time - start_time
         self.commander.execute(plan[1])
         self.plan = plan[1]
         return plan[0]
 
-
     def cleanup(self):
         self.scene.remove_world_object(self.generate_cylinder_name(0))
-        self.check_object(cylinder_exists=False, name = self.generate_cylinder_name(0))
+        self.check_object(cylinder_exists=False,
+                          name=self.generate_cylinder_name(0))
 
     def step_separate_arm(self, r, r_cam, Tep):
 
         if not self.plan_success:
             raise NotImplementedError("todo")
-           
+
         step = self.plan.joint_trajectory.points[self.index]
         qd = step.velocities
 
         self.index += 1
         arrived = self.index == len(self.plan.joint_trajectory.points) - 1
 
-        time_from_start = step.time_from_start.secs + step.time_from_start.nsecs/1000000000
+        time_from_start = step.time_from_start.secs + \
+            step.time_from_start.nsecs/1000000000
         self.prev_timestep = time_from_start - self.curr_time
         self.curr_time = time_from_start
 
-        return arrived, qd, [0,0]  
+        return arrived, qd, [0, 0]

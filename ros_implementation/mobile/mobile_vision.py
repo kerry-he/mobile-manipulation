@@ -23,6 +23,7 @@ import actionlib
 
 from Controllers import *
 
+
 class MobileManipController:
     def __init__(self):
         self.fetch = rtb.models.Fetch()
@@ -31,15 +32,20 @@ class MobileManipController:
         self.wTep = None
 
         self.tf_broadcaster = tf.TransformBroadcaster()
-        self.tf_listener  = tf.TransformListener()
+        self.tf_listener = tf.TransformListener()
 
-        self.jointpos_sub = rospy.Subscriber("joint_states", JointState, self.jointpos_callback)
-        
-        self.jointvel_pub = rospy.Publisher("/arm_controller/joint_velocity/command", JointJog, queue_size=1)
-        self.headvel_pub = rospy.Publisher("/head_controller/joint_velocity/command", JointJog, queue_size=1)
+        self.jointpos_sub = rospy.Subscriber(
+            "joint_states", JointState, self.jointpos_callback)
 
-        self.basevel_pub  = rospy.Publisher("/base_controller/command", Twist, queue_size=1)
-        self.gripper_action = actionlib.SimpleActionClient('/gripper_controller/gripper_action', GripperCommandAction)
+        self.jointvel_pub = rospy.Publisher(
+            "/arm_controller/joint_velocity/command", JointJog, queue_size=1)
+        self.headvel_pub = rospy.Publisher(
+            "/head_controller/joint_velocity/command", JointJog, queue_size=1)
+
+        self.basevel_pub = rospy.Publisher(
+            "/base_controller/command", Twist, queue_size=1)
+        self.gripper_action = actionlib.SimpleActionClient(
+            '/gripper_controller/gripper_action', GripperCommandAction)
         self.gripper_action.wait_for_server()
 
         self.env = swift.Swift()
@@ -58,8 +64,7 @@ class MobileManipController:
 
         self.main_timer = rospy.Timer(rospy.Duration(0.01), self.main_callback)
 
-
-    def jointpos_callback(self, data): 
+    def jointpos_callback(self, data):
         # Check if message is a gripper state or manipulator state
         if len(data.name) > 2:
             # Read joint positions
@@ -77,12 +82,13 @@ class MobileManipController:
             self.fetch_cam.q[2:] = np.array([data.position[2],
                                              data.position[4],
                                              data.position[5]])
-            
+
     def main_callback(self, event):
         # Read base position
         try:
             # Read base frame coordinates
-            (trans, rot) = self.tf_listener.lookupTransform('map', 'base_link', rospy.Time(0))
+            (trans, rot) = self.tf_listener.lookupTransform(
+                'map', 'base_link', rospy.Time(0))
 
             T = sm.SE3()
             T.A[:3, :3] = sm.UnitQuaternion(rot[3], rot[:3]).R
@@ -97,7 +103,8 @@ class MobileManipController:
 
                 # Rotation of the gripper
                 goal_to_base = self.fetch._base.t - self.wTep.t
-                self.wTep.A[:3, :3] = sm.SE3.Rz(np.arctan2(goal_to_base[1], goal_to_base[0]) + np.pi).A[:3, :3]
+                self.wTep.A[:3, :3] = sm.SE3.Rz(np.arctan2(
+                    goal_to_base[1], goal_to_base[0]) + np.pi).A[:3, :3]
 
         except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException) as e:
             # print(e)
@@ -114,33 +121,37 @@ class MobileManipController:
         # Read marker position
         try:
             # Read base frame coordinates
-            (trans, rot) = self.tf_listener.lookupTransform('map', 'apple', rospy.Time(0))
+            (trans, rot) = self.tf_listener.lookupTransform(
+                'map', 'apple', rospy.Time(0))
 
             # Set target pose to be in front of marker
             T = sm.SE3()
             T.A[:3, :3] = sm.UnitQuaternion(rot[3], rot[:3]).R @ sm.SE3.Ry(0).R
-            T.A[:3, 3] = trans #+ sm.UnitQuaternion(rot[3], rot[:3]).R @ np.array([-0.2, 0, 0])
+            # + sm.UnitQuaternion(rot[3], rot[:3]).R @ np.array([-0.2, 0, 0])
+            T.A[:3, 3] = trans
 
             # Only update position if detected object is close enough, and if the robot isn't too close
             if np.linalg.norm(self.wTep.t - trans) < et / 3 and et > 0.1:
-                self.wTep.A[:3, 3] = trans + self.wTep.R @ np.array([0.025, 0, 0])
+                self.wTep.A[:3, 3] = trans + \
+                    self.wTep.R @ np.array([0.025, 0, 0])
                 self.seen_count += 1
 
             self.tf_broadcaster.sendTransform(tuple(self.wTep.t),
-                                            tuple(sm.UnitQuaternion(self.wTep.R).A[1:]) + tuple([sm.UnitQuaternion(self.wTep.R).A[0]]),
-                                            rospy.Time.now(),
-                                            "goal",
-                                            "map")            
-            
+                                              tuple(sm.UnitQuaternion(
+                                                  self.wTep.R).A[1:]) + tuple([sm.UnitQuaternion(self.wTep.R).A[0]]),
+                                              rospy.Time.now(),
+                                              "goal",
+                                              "map")
+
         except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException) as e:
             # print(e)
             pass
 
         self.total_count += 1
 
-
         # Calculate using Jesse's controller
-        arrived, qd, qd_cam = step_holistic(self.fetch, self.fetch_cam, self.wTep.A)
+        arrived, qd, qd_cam = step_holistic(
+            self.fetch, self.fetch_cam, self.wTep.A)
 
         self.error_list = np.concatenate((self.error_list[1:], np.array([et])))
         arrived = arrived or np.std(self.error_list) < 0.0025
@@ -153,10 +164,10 @@ class MobileManipController:
         # else:
         #     arrived, qd, qd_cam = step_separate_arm(self.fetch, self.fetch_cam, self.wTep.A)
 
-
         arrived = False
         if not self.separate_arrived:
-            self.separate_arrived, qd, qd_cam = step_separate_base(self.fetch, self.fetch_cam, self.wTep.A)
+            self.separate_arrived, qd, qd_cam = step_separate_base(
+                self.fetch, self.fetch_cam, self.wTep.A)
         else:
 
             command = "source TODO; holistop; python MoveItPython2"
@@ -167,7 +178,6 @@ class MobileManipController:
             command = command + " ".join(args)
 
             ret = subprocess.run(command, capture_output=True, shell=True)
-
 
         qd /= 10
         qd_cam /= 10
@@ -185,7 +195,6 @@ class MobileManipController:
             print("Time elapsed: ", rospy.Time.now().to_sec() - self.start_time)
             print("\n\n")
 
-
         # Publish base and joint velocities
         v_base = Twist()
         v_base.angular.z = qd[0]
@@ -201,8 +210,10 @@ class MobileManipController:
         self.headvel_pub.publish(v_head)
 
         sight_base = sm.SE3.Ry(np.pi/2) * sm.SE3(0.0, 0.0, 2.5)
-        line_of_sight = sg.Cylinder(radius=0.001, length=5.0, base=self.fetch_cam.fkine(self.fetch_cam.q, fast=True) @ sight_base.A)
-        line_of_sight._base = self.fetch_cam.fkine(self.fetch_cam.q, fast=True) @ sight_base.A
+        line_of_sight = sg.Cylinder(radius=0.001, length=5.0, base=self.fetch_cam.fkine(
+            self.fetch_cam.q, fast=True) @ sight_base.A)
+        line_of_sight._base = self.fetch_cam.fkine(
+            self.fetch_cam.q, fast=True) @ sight_base.A
 
         # self.env.add(line_of_sight)
 
@@ -210,18 +221,17 @@ class MobileManipController:
 
         return
 
-
     def stop_robot(self):
-            v_base = Twist()
-            self.basevel_pub.publish(v_base)
+        v_base = Twist()
+        self.basevel_pub.publish(v_base)
 
-            v_joint = JointJog()
-            v_joint.velocities = np.zeros(8)
-            self.jointvel_pub.publish(v_joint)
+        v_joint = JointJog()
+        v_joint.velocities = np.zeros(8)
+        self.jointvel_pub.publish(v_joint)
 
-            v_head = JointJog()
-            v_head.velocities = np.zeros(2)
-            self.headvel_pub.publish(v_head)            
+        v_head = JointJog()
+        v_head.velocities = np.zeros(2)
+        self.headvel_pub.publish(v_head)
 
 
 if __name__ == '__main__':
@@ -231,4 +241,3 @@ if __name__ == '__main__':
         rospy.spin()
     except rospy.ROSInterruptException:
         pass
-

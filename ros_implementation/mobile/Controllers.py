@@ -8,6 +8,7 @@ import qpsolvers as qp
 import numpy as np
 import math
 
+
 def transform_between_vectors(a, b):
     a = a / np.linalg.norm(a)
     b = b / np.linalg.norm(b)
@@ -29,7 +30,8 @@ def step_proposed(r, r_cam, Tep):
     # Spatial error
     et = np.sum(np.abs(eTep[:3, -1]))
 
-    head_rotation, head_angle, _ = transform_between_vectors(np.array([1, 0, 0]), cTep[:3, 3])
+    head_rotation, head_angle, _ = transform_between_vectors(
+        np.array([1, 0, 0]), cTep[:3, 3])
 
     # Gain term (lambda) for control minimisation
     Y = 0.01
@@ -37,13 +39,17 @@ def step_proposed(r, r_cam, Tep):
     # Quadratic component of objective function
     Q = np.eye(r.n + 2 + 10)
 
-    Q[: r.n, : r.n] *= Y                                        # Robotic manipulator
+    # Robotic manipulator
+    Q[: r.n, : r.n] *= Y
     Q[:2, :2] *= 1.0 / et                                       # Mobile base
-    Q[r.n : r.n + 2, r.n : r.n + 2] *= Y                        # Camera
-    Q[r.n + 2 : -7, r.n + 2 : -7] = (1.0 / et) * np.eye(3)      # Slack manipulator
+    Q[r.n: r.n + 2, r.n: r.n + 2] *= Y                        # Camera
+    Q[r.n + 2: -7, r.n + 2: -7] = (1.0 / et) * \
+        np.eye(3)      # Slack manipulator
     Q[-8, -8] *= 1000
-    Q[r.n + 5 : -4, r.n + 5 : -4] = (1.0 / np.power(et, 5)) * np.eye(3)      # Slack manipulator
-    Q[-4:-1, -4:-1] = 100 * np.eye(3)                                # Slack camera
+    # Slack manipulator
+    Q[r.n + 5: -4, r.n + 5: -4] = (1.0 / np.power(et, 5)) * np.eye(3)
+    # Slack camera
+    Q[-4:-1, -4:-1] = 100 * np.eye(3)
     Q[-1, -1] = np.power(et, 1)
 
     v_manip, _ = rtb.p_servo(wTe, Tep, 1.5)
@@ -55,11 +61,13 @@ def step_proposed(r, r_cam, Tep):
     # v_camera = v_camera / np.linalg.norm(v_camera) * 5 * (1-np.exp(-v_cam_norm*10))
 
     # The equality contraints
-    Aeq = np.c_[r.jacobe(r.q, fast=True), np.zeros((6, 2)), np.eye(6), np.zeros((6, 4))]
+    Aeq = np.c_[r.jacobe(r.q, fast=True), np.zeros(
+        (6, 2)), np.eye(6), np.zeros((6, 4))]
     beq = v_manip.reshape((6,))
 
     jacobe_cam = r_cam.jacobe(r_cam.q, fast=True)[3:, :]
-    Aeq = np.r_[Aeq, np.c_[jacobe_cam[:, :3], np.zeros((3, 7)), jacobe_cam[:, 3:], np.zeros((3, 6)), np.eye(3), np.zeros((3, 1)),]]
+    Aeq = np.r_[Aeq, np.c_[jacobe_cam[:, :3], np.zeros(
+        (3, 7)), jacobe_cam[:, 3:], np.zeros((3, 6)), np.eye(3), np.zeros((3, 1)), ]]
     beq = np.r_[beq, v_camera[3:].reshape((3,))]
 
     # The inequality constraints for joint limit avoidance
@@ -76,19 +84,20 @@ def step_proposed(r, r_cam, Tep):
 
     # Form the joint limit velocity damper
     Ain[: r.n, : r.n], bin[: r.n] = r.joint_velocity_damper(ps, pi, r.n)
-    
+
     Ain_torso, bin_torso = r_cam.joint_velocity_damper(0.0, 0.05, r_cam.n)
     Ain[2, 2] = Ain_torso[2, 2]
     bin[2] = bin_torso[2]
 
     Ain_cam, bin_cam = r_cam.joint_velocity_damper(ps, pi, r_cam.n)
-    Ain[r.n : r.n + 2, r.n : r.n + 2] = Ain_cam[3:, 3:]
-    bin[r.n : r.n + 2] = bin_cam[3:]
+    Ain[r.n: r.n + 2, r.n: r.n + 2] = Ain_cam[3:, 3:]
+    bin[r.n: r.n + 2] = bin_cam[3:]
 
     sight_base = sm.SE3.Ry(np.pi/2) * sm.SE3(0.0, 0.0, 2.5)
-    line_of_sight = sg.Cylinder(radius=0.001, length=5.0, base=r_cam.fkine(r_cam.q, fast=True) @ sight_base.A)
+    line_of_sight = sg.Cylinder(radius=0.001, length=5.0, base=r_cam.fkine(
+        r_cam.q, fast=True) @ sight_base.A)
     line_of_sight._base = r_cam.fkine(r_cam.q, fast=True) @ sight_base.A
-    
+
     c_Ain, c_bin, c_din = r.vision_collision_damper(
         line_of_sight,
         r.q[:r.n],
@@ -106,10 +115,10 @@ def step_proposed(r, r_cam, Tep):
         Ain = np.r_[Ain, c_Ain]
         bin = np.r_[bin, c_bin]
 
-
     # Linear component of objective function: the manipulability Jacobian
     c = np.concatenate(
-        (np.zeros(2), -r.jacobm(start=r.links[3]).reshape((r.n - 2,)), np.zeros(2), np.zeros(10))
+        (np.zeros(
+            2), -r.jacobm(start=r.links[3]).reshape((r.n - 2,)), np.zeros(2), np.zeros(10))
     )
 
     # Get base to face end-effector
@@ -120,16 +129,18 @@ def step_proposed(r, r_cam, Tep):
     c[0] = -ε
 
     # The lower and upper bounds on the joint velocity and slack variable
-    lb = -np.r_[r.qdlim[: r.n], r_cam.qdlim[3:r_cam.n], 100 * np.ones(6), 500 * np.ones(3), 0]
-    ub = np.r_[r.qdlim[: r.n], r_cam.qdlim[3:r_cam.n], 100 * np.ones(6), 500 * np.ones(3), 100]
+    lb = -np.r_[r.qdlim[: r.n], r_cam.qdlim[3:r_cam.n],
+                100 * np.ones(6), 500 * np.ones(3), 0]
+    ub = np.r_[r.qdlim[: r.n], r_cam.qdlim[3:r_cam.n],
+               100 * np.ones(6), 500 * np.ones(3), 100]
 
     # Solve for the joint velocities dq
     qd = qp.solve_qp(Q, c, Ain, bin, Aeq, beq, lb=lb, ub=ub)
-    
+
     if qd is None:
         raise ValueError('QP failed to solve')
 
-    qd_cam = np.concatenate((qd[:3], qd[r.n : r.n + 2]))
+    qd_cam = np.concatenate((qd[:3], qd[r.n: r.n + 2]))
     qd = qd[: r.n]
 
     if et > 0.5:
@@ -145,7 +156,6 @@ def step_proposed(r, r_cam, Tep):
         return False, qd, qd_cam
 
 
-
 def step_holistic(r, r_cam, Tep):
 
     wTe = r.fkine(r.q, fast=True)
@@ -157,7 +167,8 @@ def step_holistic(r, r_cam, Tep):
     # Spatial error
     et = np.sum(np.abs(eTep[:3, -1]))
 
-    head_rotation, head_angle, _ = transform_between_vectors(np.array([1, 0, 0]), cTep[:3, 3])
+    head_rotation, head_angle, _ = transform_between_vectors(
+        np.array([1, 0, 0]), cTep[:3, 3])
 
     # Gain term (lambda) for control minimisation
     Y = 0.01
@@ -165,14 +176,16 @@ def step_holistic(r, r_cam, Tep):
     # Quadratic component of objective function
     Q = np.eye(r.n + 2 + 9)
 
-    Q[: r.n, : r.n] *= Y                                        # Robotic manipulator
+    # Robotic manipulator
+    Q[: r.n, : r.n] *= Y
     Q[:2, :2] *= 1.0 / et                                       # Mobile base
-    Q[r.n : r.n + 2, r.n : r.n + 2] *= Y                        # Camera
-    Q[r.n + 2 : -6, r.n + 2 : -6] = (1.0 / et) * np.eye(3)      # Slack manipulator
-    Q[r.n + 5 : -3, r.n + 5 : -3] = (1.0 / np.power(et, 5)) * np.eye(3)      # Slack manipulator
+    Q[r.n: r.n + 2, r.n: r.n + 2] *= Y                        # Camera
+    Q[r.n + 2: -6, r.n + 2: -6] = (1.0 / et) * \
+        np.eye(3)      # Slack manipulator
+    # Slack manipulator
+    Q[r.n + 5: -3, r.n + 5: -3] = (1.0 / np.power(et, 5)) * np.eye(3)
     Q[-7, -7] *= 1000
     Q[-3:, -3:] = 100 * np.eye(3)                      # Slack camera
-
 
     v_manip, _ = rtb.p_servo(wTe, Tep, 1.5)
     v_manip[3:] *= 1.3
@@ -181,11 +194,13 @@ def step_holistic(r, r_cam, Tep):
     v_camera *= 2.6
 
     # The equality contraints
-    Aeq = np.c_[r.jacobe(r.q, fast=True), np.zeros((6, 2)), np.eye(6), np.zeros((6, 3))]
+    Aeq = np.c_[r.jacobe(r.q, fast=True), np.zeros(
+        (6, 2)), np.eye(6), np.zeros((6, 3))]
     beq = v_manip.reshape((6,))
 
     jacobe_cam = r_cam.jacobe(r_cam.q, fast=True)[3:, :]
-    Aeq = np.r_[Aeq, np.c_[jacobe_cam[:, :3], np.zeros((3, 7)), jacobe_cam[:, 3:], np.zeros((3, 6)), np.eye(3)]]
+    Aeq = np.r_[Aeq, np.c_[jacobe_cam[:, :3], np.zeros(
+        (3, 7)), jacobe_cam[:, 3:], np.zeros((3, 6)), np.eye(3)]]
     beq = np.r_[beq, v_camera[3:].reshape((3,))]
 
     # The inequality constraints for joint limit avoidance
@@ -202,18 +217,19 @@ def step_holistic(r, r_cam, Tep):
 
     # Form the joint limit velocity damper
     Ain[: r.n, : r.n], bin[: r.n] = r.joint_velocity_damper(ps, pi, r.n)
-    
+
     Ain_torso, bin_torso = r_cam.joint_velocity_damper(0.0, 0.05, r_cam.n)
     Ain[2, 2] = Ain_torso[2, 2]
     bin[2] = bin_torso[2]
 
     Ain_cam, bin_cam = r_cam.joint_velocity_damper(ps, pi, r_cam.n)
-    Ain[r.n : r.n + 2, r.n : r.n + 2] = Ain_cam[3:, 3:]
-    bin[r.n : r.n + 2] = bin_cam[3:]
+    Ain[r.n: r.n + 2, r.n: r.n + 2] = Ain_cam[3:, 3:]
+    bin[r.n: r.n + 2] = bin_cam[3:]
 
     # Linear component of objective function: the manipulability Jacobian
     c = np.concatenate(
-        (np.zeros(2), -r.jacobm(start=r.links[3]).reshape((r.n - 2,)), np.zeros(2), np.zeros(9))
+        (np.zeros(2), -
+         r.jacobm(start=r.links[3]).reshape((r.n - 2,)), np.zeros(2), np.zeros(9))
     )
 
     # Get base to face end-effector
@@ -224,16 +240,18 @@ def step_holistic(r, r_cam, Tep):
     c[0] = -ε
 
     # The lower and upper bounds on the joint velocity and slack variable
-    lb = -np.r_[r.qdlim[: r.n], r_cam.qdlim[3:r_cam.n], 100 * np.ones(6), 500 * np.ones(3)]
-    ub = np.r_[r.qdlim[: r.n], r_cam.qdlim[3:r_cam.n], 100 * np.ones(6), 500 * np.ones(3)]
+    lb = -np.r_[r.qdlim[: r.n], r_cam.qdlim[3:r_cam.n],
+                100 * np.ones(6), 500 * np.ones(3)]
+    ub = np.r_[r.qdlim[: r.n], r_cam.qdlim[3:r_cam.n],
+               100 * np.ones(6), 500 * np.ones(3)]
 
     # Solve for the joint velocities dq
     qd = qp.solve_qp(Q, c, Ain, bin, Aeq, beq, lb=lb, ub=ub)
-    
+
     if qd is None:
         raise ValueError('QP failed to solve')
 
-    qd_cam = np.concatenate((qd[:3], qd[r.n : r.n + 2]))
+    qd_cam = np.concatenate((qd[:3], qd[r.n: r.n + 2]))
     qd = qd[: r.n]
 
     if et > 0.5:
@@ -249,7 +267,6 @@ def step_holistic(r, r_cam, Tep):
         return True, qd, qd_cam
     else:
         return False, qd, qd_cam
-
 
 
 def step_p_camera(r, r_cam, Tep):
@@ -273,7 +290,7 @@ def step_p_camera(r, r_cam, Tep):
     Q[-4, -4] *= 1000
 
     # Slack component of Q
-    Q[r.n :, r.n :] = (1.0 / et) * np.eye(6)
+    Q[r.n:, r.n:] = (1.0 / et) * np.eye(6)
 
     v, _ = rtb.p_servo(wTe, Tep, 1.5)
 
@@ -300,11 +317,12 @@ def step_p_camera(r, r_cam, Tep):
 
     Ain_torso, bin_torso = r.joint_velocity_damper(0.0, 0.05, r.n)
     Ain[2, 2] = Ain_torso[2, 2]
-    bin[2] = bin_torso[2]    
+    bin[2] = bin_torso[2]
 
     # Linear component of objective function: the manipulability Jacobian
     c = np.concatenate(
-        (np.zeros(2), -r.jacobm(start=r.links[3]).reshape((r.n - 2,)), np.zeros(6))
+        (np.zeros(2), -
+         r.jacobm(start=r.links[3]).reshape((r.n - 2,)), np.zeros(6))
     )
 
     # Get base to face end-effector
@@ -322,16 +340,18 @@ def step_p_camera(r, r_cam, Tep):
     qd = qp.solve_qp(Q, c, Ain, bin, Aeq, beq, lb=lb, ub=ub)
     qd = qd[: r.n]
 
-
     # Simple camera PID
     wTc = r_cam.fkine(r_cam.q, fast=True)
     cTep = np.linalg.inv(wTc) @ Tep
 
     # Spatial error
-    head_rotation, head_angle, _ = transform_between_vectors(np.array([1, 0, 0]), cTep[:3, 3])
+    head_rotation, head_angle, _ = transform_between_vectors(
+        np.array([1, 0, 0]), cTep[:3, 3])
 
-    yaw = max(min(head_rotation.rpy()[2] * 10, r_cam.qdlim[3]), -r_cam.qdlim[3])
-    pitch = max(min(head_rotation.rpy()[1] * 10, r_cam.qdlim[4]), -r_cam.qdlim[4])
+    yaw = max(min(head_rotation.rpy()[2] * 10,
+              r_cam.qdlim[3]), -r_cam.qdlim[3])
+    pitch = max(min(head_rotation.rpy()[1]
+                * 10, r_cam.qdlim[4]), -r_cam.qdlim[4])
 
     qd_cam = np.r_[qd[:3], yaw, pitch]
 
@@ -341,8 +361,6 @@ def step_p_camera(r, r_cam, Tep):
     else:
         qd *= 1.4
         qd_cam *= 1.4
-
-    
 
     if et < 0.03:
         return True, qd, qd_cam
@@ -357,7 +375,7 @@ def step_separate_base(r, r_cam, Tep):
     wTe = r._base.A[:] @ sm.SE3(1.1281 * 4 / 5, 0, 0).A
 
     eTep = np.linalg.inv(wTe) @ Tep
-    
+
     # Spatial error
     et = np.sum(np.abs(eTep[:2, -1]))
 
@@ -372,14 +390,15 @@ def step_separate_base(r, r_cam, Tep):
     Q[:2, :2] *= 1.0 / et
 
     # Slack component of Q
-    Q[r.n :, r.n :] = (1.0 / et) * np.eye(6)
+    Q[r.n:, r.n:] = (1.0 / et) * np.eye(6)
 
     v, _ = rtb.p_servo(wTe, Tep, 1.5)
 
     v[3:] *= 0
 
     # The equality contraints
-    Aeq = np.c_[r.jacobe(r.q, start="base0", end="base_link", tool=sm.SE3(1.1281, 0, 0).A, fast=True), np.zeros((6, 8)), np.eye(6)]
+    Aeq = np.c_[r.jacobe(r.q, start="base0", end="base_link", tool=sm.SE3(
+        1.1281, 0, 0).A, fast=True), np.zeros((6, 8)), np.eye(6)]
     beq = v.reshape((6,))
 
     Aeq_arm = np.c_[np.zeros((8, 2)), np.eye(8), np.zeros((8, 6))]
@@ -409,7 +428,7 @@ def step_separate_base(r, r_cam, Tep):
     # )
     c = np.concatenate(
         (np.zeros(2), np.zeros(8), np.zeros(6))
-    )    
+    )
 
     # Get base to face end-effector
     kε = 0.5
@@ -422,17 +441,18 @@ def step_separate_base(r, r_cam, Tep):
     lb = -np.r_[r.qdlim[: r.n], 10 * np.ones(6)]
     ub = np.r_[r.qdlim[: r.n], 10 * np.ones(6)]
 
-
     # Simple camera PID
     wTc = r_cam.fkine(r_cam.q, fast=True)
     cTep = np.linalg.inv(wTc) @ Tep
 
     # Spatial error
-    head_rotation, head_angle, _ = transform_between_vectors(np.array([1, 0, 0]), cTep[:3, 3])
+    head_rotation, head_angle, _ = transform_between_vectors(
+        np.array([1, 0, 0]), cTep[:3, 3])
 
-    yaw = max(min(head_rotation.rpy()[2] * 10, r_cam.qdlim[3]), -r_cam.qdlim[3])
-    pitch = max(min(head_rotation.rpy()[1] * 10, r_cam.qdlim[4]), -r_cam.qdlim[4])
-
+    yaw = max(min(head_rotation.rpy()[2] * 10,
+              r_cam.qdlim[3]), -r_cam.qdlim[3])
+    pitch = max(min(head_rotation.rpy()[1]
+                * 10, r_cam.qdlim[4]), -r_cam.qdlim[4])
 
     # Solve for the joint velocities dq
     qd = qp.solve_qp(Q, c, Ain, bin, Aeq, beq, lb=lb, ub=ub)
@@ -453,7 +473,6 @@ def step_separate_base(r, r_cam, Tep):
         return True, qd, qd_cam
     else:
         return False, qd, qd_cam
-
 
 
 def step_separate_arm(r, r_cam, Tep):
@@ -477,7 +496,7 @@ def step_separate_arm(r, r_cam, Tep):
     Q[:2, :2] *= 1.0 / et
 
     # Slack component of Q
-    Q[r.n :, r.n :] = (1.0 / et) * np.eye(6)
+    Q[r.n:, r.n:] = (1.0 / et) * np.eye(6)
 
     v, _ = rtb.p_servo(wTe, Tep, 1.5)
 
@@ -514,7 +533,8 @@ def step_separate_arm(r, r_cam, Tep):
 
     # Linear component of objective function: the manipulability Jacobian
     c = np.concatenate(
-        (np.zeros(2), -r.jacobm(start=r.links[3]).reshape((r.n - 2,)), np.zeros(6))
+        (np.zeros(2), -
+         r.jacobm(start=r.links[3]).reshape((r.n - 2,)), np.zeros(6))
     ) * 0
 
     # Get base to face end-effector
@@ -528,17 +548,18 @@ def step_separate_arm(r, r_cam, Tep):
     lb = -np.r_[r.qdlim[: r.n], 10 * np.ones(6)]
     ub = np.r_[r.qdlim[: r.n], 10 * np.ones(6)]
 
-
     # Simple camera PID
     wTc = r_cam.fkine(r_cam.q, fast=True)
     cTep = np.linalg.inv(wTc) @ Tep
 
     # Spatial error
-    head_rotation, head_angle, _ = transform_between_vectors(np.array([1, 0, 0]), cTep[:3, 3])
+    head_rotation, head_angle, _ = transform_between_vectors(
+        np.array([1, 0, 0]), cTep[:3, 3])
 
-    yaw = max(min(head_rotation.rpy()[2] * 10, r_cam.qdlim[3]), -r_cam.qdlim[3])
-    pitch = max(min(head_rotation.rpy()[1] * 10, r_cam.qdlim[4]), -r_cam.qdlim[4])
-
+    yaw = max(min(head_rotation.rpy()[2] * 10,
+              r_cam.qdlim[3]), -r_cam.qdlim[3])
+    pitch = max(min(head_rotation.rpy()[1]
+                * 10, r_cam.qdlim[4]), -r_cam.qdlim[4])
 
     # Solve for the joint velocities dq
     qd = qp.solve_qp(Q, c, Ain, bin, Aeq, beq, lb=lb, ub=ub)
