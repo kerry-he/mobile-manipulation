@@ -12,7 +12,7 @@ import spatialmath as sm
 import qpsolvers as qp
 
 
-class PCamera(BaseController):
+class Ours(BaseController):
     def step(r, r_cam, Tep, centroid_sight):
 
         wTe = r.fkine(r.q, fast=True)
@@ -100,7 +100,7 @@ class PCamera(BaseController):
         centroid_sight._length = np.linalg.norm(camera_pos - target_pos)
         centroid_sight._base = (sm.SE3(middle) * R).A
 
-        c_Ain, c_bin, _ = r.new_vision_collision_damper(
+        c_Ain, c_bin, _ = r.vision_collision_damper(
             los,
             r.q[:r.n],
             0.3,
