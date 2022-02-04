@@ -17,6 +17,8 @@ https://github.com/rhys-newbury/swift
 
 There is also a requirements.txt (for pip) and an environment.yml (for conda) to help set up the environments. 
 
+The ROS implementation for the Panda will be coming shortly. 
+
 
 
 

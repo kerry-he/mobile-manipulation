@@ -2,9 +2,6 @@
 @author Kerry He, Rhys Newbury
 Base on: Jesse Haviland
 """
-from sqlite3 import Cursor
-from resources.mobile.Holistic import Holistic
-from resources.mobile.PCamera import PCamera
 import swift
 import roboticstoolbox as rtb
 import spatialgeometry as sg
@@ -14,7 +11,6 @@ import numpy as np
 import math
 import csv
 from enum import Enum
-from Controllers import *
 
 np.random.seed(1337)
 
