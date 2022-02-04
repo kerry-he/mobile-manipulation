@@ -14,7 +14,8 @@ import spatialmath as sm
 import numpy as np
 import qpsolvers as qp
 from itertools import product
-import csv, timeit
+import csv
+import timeit
 from baseController import BaseController
 
 pos_p = 4
@@ -27,9 +28,9 @@ col_p = 1
 col_w = 100000
 
 
-
 PROGRAM_TIME = 0
 considerCollisions = True
+
 
 class Ours(BaseController):
 
@@ -80,22 +81,24 @@ class Ours(BaseController):
         Q[:n, :n] *= Y
 
         # Slack component of Q
-        Q[n : n + 3, n : n + 3] = pos_w * (1 / np.power(et, pos_p)) * np.eye(3)
+        Q[n: n + 3, n: n + 3] = pos_w * (1 / np.power(et, pos_p)) * np.eye(3)
 
         # 4th is equality
-        Q[n + 3 : n + 4, n + 3 : n + 4] = rot_w * (1 / (np.power(et, rot_p))) * np.eye(1)
+        Q[n + 3: n + 4, n + 3: n + 4] = rot_w * \
+            (1 / (np.power(et, rot_p))) * np.eye(1)
 
         # make the collisions a soft constraint
         # by introducing a slack term for each of the objects
-        for j in range(1,NUM_OBJECTS+1):
+        for j in range(1, NUM_OBJECTS+1):
             Q[-j, -j] = 1000000
 
         # 3 objects, 3rd index -> -1
-                    # 2nd index -> 2
-                    # 1st index -> -3
-        Q[-1,-1] = col_w * np.power(et, col_p)    
+            # 2nd index -> 2
+            # 1st index -> -3
+        Q[-1, -1] = col_w * np.power(et, col_p)
 
-        Aeq = np.c_[panda.jacobe(panda.q)[:3], np.eye(3), np.zeros((3, 1 + NUM_OBJECTS))][:3]
+        Aeq = np.c_[panda.jacobe(panda.q)[:3], np.eye(
+            3), np.zeros((3, 1 + NUM_OBJECTS))][:3]
         beq = v[:3].reshape((3,))
 
         Ain = np.zeros((n + N_SLACK_TERMS, n + N_SLACK_TERMS))
@@ -108,7 +111,7 @@ class Ours(BaseController):
         # The influence angle (in radians) in which the velocity damper
         # becomes active
         pi = 0.9
-        
+
         # Form the joint limit velocity damper
         Ain[:n, :n], bin[:n] = panda.joint_velocity_damper(ps, pi, n)
 
@@ -118,14 +121,16 @@ class Ours(BaseController):
         gripper_z = panda.fkine(panda.q).A[:3, 2]
         z_axis = np.array([0, 0, 1])
 
-        beta = np.arccos(np.dot(-gripper_z, z_axis) / (np.linalg.norm(gripper_z) * np.linalg.norm(z_axis)))
+        beta = np.arccos(np.dot(-gripper_z, z_axis) /
+                         (np.linalg.norm(gripper_z) * np.linalg.norm(z_axis)))
 
         u = np.cross(gripper_z, z_axis)
 
         J_cone = u.T @ panda.jacob0(panda.q)[3:]
         J_cone = J_cone.reshape((1, 7))
 
-        damper = 1.0 * (np.cos(beta) - np.cos(gripper_angle_limit)) / (1 - np.cos(gripper_angle_limit))
+        damper = 1.0 * (np.cos(beta) - np.cos(gripper_angle_limit)
+                        ) / (1 - np.cos(gripper_angle_limit))
 
         c_Ain = np.c_[J_cone, np.zeros((1, N_SLACK_TERMS))]
 
@@ -136,7 +141,8 @@ class Ours(BaseController):
         gripper_x = panda.fkine(panda.q).A[:3, 0]
         gripper_y = panda.fkine(panda.q).A[:3, 1]
         u2 = np.cross(z_axis, gripper_y)
-        gamma = np.arccos(np.dot(gripper_y, z_axis) / (np.linalg.norm(gripper_y) * np.linalg.norm(z_axis)))
+        gamma = np.arccos(np.dot(gripper_y, z_axis) /
+                          (np.linalg.norm(gripper_y) * np.linalg.norm(z_axis)))
 
         # print(gamma)
 
@@ -151,13 +157,16 @@ class Ours(BaseController):
         Aeq = np.r_[Aeq, c_Aeq]
         beq = np.r_[beq, np.cos(gamma)]
 
-        occluded, Ain, bin = self.calcVelocityDamper(panda, collisions, NUM_OBJECTS, n, Ain, bin)
+        occluded, Ain, bin = self.calcVelocityDamper(
+            panda, collisions, NUM_OBJECTS, n, Ain, bin)
 
         # Linear component of objective function: the manipulability Jacobian
-        c = np.r_[-panda.jacobm(panda.q).reshape((n,)), np.zeros(N_SLACK_TERMS)]
+        c = np.r_[-panda.jacobm(panda.q).reshape((n,)),
+                  np.zeros(N_SLACK_TERMS)]
 
         # The lower and upper bounds on the joint velocity and slack variable
-        lb = -np.r_[panda.qdlim[:n], 10 * np.ones(3), 10 * np.ones(1), np.zeros(N_SLACK_TERMS -4)]
+        lb = -np.r_[panda.qdlim[:n], 10 *
+                    np.ones(3), 10 * np.ones(1), np.zeros(N_SLACK_TERMS - 4)]
         # lb = -np.r_[panda.qdlim[:n], 10 * np.ones(N_SLACK_TERMS)]
         ub = np.r_[panda.qdlim[:n], 10 * np.ones(N_SLACK_TERMS)]
 
@@ -166,7 +175,6 @@ class Ours(BaseController):
         # e = timeit.default_timer()
 
         return qd, et < 0.02, occluded
-
 
     def updateVelDamper(self, c_Ain, c_bin, Ain, bin, NUM_OBJECTS, index):
         slack_matrix = np.zeros((c_Ain.shape[0], NUM_OBJECTS))

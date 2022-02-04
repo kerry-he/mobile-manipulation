@@ -5,7 +5,6 @@ Based on Jesse Haviland
 """
 
 import traceback
-
 import swift
 import spatialgeometry as sg
 import roboticstoolbox as rtb
@@ -18,12 +17,14 @@ import sys
 import timeit
 from enum import Enum
 
+
 class Alg(Enum):
     Ours = 1
     Slack = 2
     NEO = 3
     PBVS = 4
     MoveIt = 5
+
 
 CURRENT_ALG = Alg.NEO
 
@@ -68,20 +69,21 @@ controller = Controller()
 camera_pos = None
 
 
-
 def spawn_objects(addToEnv=False):
     global camera_pos
 
-    camera_pos = np.array([np.random.uniform(-1, 1), np.random.uniform(-1, 1), np.random.uniform(0.5, 1.5)])
+    camera_pos = np.array(
+        [np.random.uniform(-1, 1), np.random.uniform(-1, 1), np.random.uniform(0.5, 1.5)])
 
     # spawn objects.
     k = 0
     while k < NUM_OBJECTS:
-    # for k in range(NUM_OBJECTS):
+        # for k in range(NUM_OBJECTS):
 
         angle = np.random.uniform() * np.pi * 2
         radius = np.random.uniform() / 4 + 0.25
-        target_pos = np.array([radius * np.cos(angle), radius * np.sin(angle), 0])
+        target_pos = np.array(
+            [radius * np.cos(angle), radius * np.sin(angle), 0])
 
         middle = (camera_pos + target_pos) / 2
         R, _, _ = transform_between_vectors(
@@ -93,14 +95,14 @@ def spawn_objects(addToEnv=False):
             # line of sight between camera and object we want to avoid
             s0 = sg.Cylinder(
                 radius=0.001,
-                length=2, #np.linalg.norm(camera_pos - target_pos),
+                length=2,  # np.linalg.norm(camera_pos - target_pos),
                 base=sm.SE3(middle) * R,
             )
             collisions.append(s0)
-            if  k == NUM_OBJECTS - 1:
-                color = [255,0,0]
+            if k == NUM_OBJECTS - 1:
+                color = [255, 0, 0]
             else:
-                color = [0,255,0]
+                color = [0, 255, 0]
             # Make a target
             target = sg.Sphere(
                 radius=0.02, base=sm.SE3(*target_pos), color=color
@@ -118,9 +120,10 @@ def spawn_objects(addToEnv=False):
         # input()
 
         if addToEnv or not controller.isInCollision(panda, collisions[k], n):
-            k += 1           
- 
+            k += 1
+
     return spheres[-1]
+
 
 def transform_between_vectors(a, b):
     a = a / np.linalg.norm(a)
@@ -144,14 +147,14 @@ success = 0
 
 START_RUN = timeit.default_timer()
 
-pos_power = [3,4,5]
+pos_power = [3, 4, 5]
 pos_weight = [1000, 10000, 100000]
 
 # some slack on this
-rot_power = [3,4,5]
+rot_power = [3, 4, 5]
 rot_weight = [1000, 10000, 100000]
 
-col_power = [4,5,6]
+col_power = [4, 5, 6]
 col_weight = [10, 100, 1000]
 
 # slack_power = [2,4,6, 1]
@@ -159,8 +162,10 @@ col_weight = [10, 100, 1000]
 
 PROGRAM_TIME = 0
 
-ALL_COMBOS = product(pos_power, pos_weight, rot_power, rot_weight, col_power, col_weight)
-total_length = np.prod([len(l) for l in [pos_power, pos_weight, rot_power, rot_weight, col_power, col_weight]])
+ALL_COMBOS = product(pos_power, pos_weight, rot_power,
+                     rot_weight, col_power, col_weight)
+total_length = np.prod([len(l) for l in [
+                       pos_power, pos_weight, rot_power, rot_weight, col_power, col_weight]])
 print("total_length", total_length)
 QUARTILE = int(sys.argv[2])
 
@@ -176,7 +181,6 @@ for (index_so_far, (pos_p, pos_w, rot_p, rot_w, col_p, col_w)) in enumerate(prod
     elif index_so_far > end_index:
         break
 
-
     success = 0
     _total = []
     _totalSeen = []
@@ -190,7 +194,7 @@ for (index_so_far, (pos_p, pos_w, rot_p, rot_w, col_p, col_w)) in enumerate(prod
 
         target = spawn_objects(addToEnv=False)
         env.step()
-        
+
         # Set the desired end-effector pose to the location of target
         Tep = panda.fkine(panda.q)
         Tep.A[:3, 3] = target.base.t
@@ -203,7 +207,6 @@ for (index_so_far, (pos_p, pos_w, rot_p, rot_w, col_p, col_w)) in enumerate(prod
             _totalSeen += [-1]
             _time += [-1]
             continue
-
 
         total_seen = 0
         total = 0
@@ -221,14 +224,14 @@ for (index_so_far, (pos_p, pos_w, rot_p, rot_w, col_p, col_w)) in enumerate(prod
             try:
 
                 _s = timeit.default_timer()
-                qd, arrived, occluded = controller.step(panda, Tep, NUM_OBJECTS, n, collisions)
+                qd, arrived, occluded = controller.step(
+                    panda, Tep, NUM_OBJECTS, n, collisions)
                 # if qd is None:
                 #     _total += [-1]
                 #     _totalSeen += [-1]
                 #     _time += [-1]
                 #     arrived = False
                 #     break
-
 
                 panda.qd[:n] = qd[:n]
 
@@ -241,14 +244,15 @@ for (index_so_far, (pos_p, pos_w, rot_p, rot_w, col_p, col_w)) in enumerate(prod
 
                 total += NUM_OBJECTS
                 time += current_dt
-                time_blocking = np.add(current_dt * np.array(occluded), time_blocking)
+                time_blocking = np.add(
+                    current_dt * np.array(occluded), time_blocking)
 
                 if time > 60:
                     break
             except Exception as e:
                 print(traceback.format_exc())
                 break
-            
+
         controller.cleanup(NUM_OBJECTS)
         _total += [total]
         _totalSeen += [total_seen]
@@ -258,8 +262,10 @@ for (index_so_far, (pos_p, pos_w, rot_p, rot_w, col_p, col_w)) in enumerate(prod
         panda.qd = 0
 
     with open(f'neo_avg_data_{QUARTILE}.csv', 'a', newline='') as csvfile:
-        writer = csv.writer(csvfile, delimiter=',', quotechar='|', quoting=csv.QUOTE_MINIMAL)
+        writer = csv.writer(csvfile, delimiter=',',
+                            quotechar='|', quoting=csv.QUOTE_MINIMAL)
 
         vision = np.divide(_totalSeen, _total)
         average_vision = np.mean(vision)
-        writer.writerow([pos_p, pos_w, rot_p, rot_w, col_p, col_w,  average_vision*NUM_OBJECTS, np.max(vision)*NUM_OBJECTS, np.min(vision)*NUM_OBJECTS, sum(_time), success, _timeBlocking])
+        writer.writerow([pos_p, pos_w, rot_p, rot_w, col_p, col_w,  average_vision*NUM_OBJECTS, np.max(
+            vision)*NUM_OBJECTS, np.min(vision)*NUM_OBJECTS, sum(_time), success, _timeBlocking])

@@ -2,13 +2,14 @@
 @author Kerry He, Rhys Newbury
 Base on: Jesse Haviland
 """
-
 from baseController import BaseController
-import numpy as np, math
+import numpy as np
+import math
 import roboticstoolbox as rtb
 import spatialgeometry as sg
 import spatialmath as sm
 import qpsolvers as qp
+
 
 class Separate(BaseController):
 
@@ -18,7 +19,8 @@ class Separate(BaseController):
 
     def step(self, r, r_cam, Tep, centroid_sight):
         if not self.separate_arrived:
-            self.separate_arrived, qd, camera_qd = self.step_separate_base(r, r_cam, Tep)
+            self.separate_arrived, qd, camera_qd = self.step_separate_base(
+                r, r_cam, Tep)
             return self.seperate_arrived, qd, camera_qd
         else:
             return self.step_separate_arm(r, r_cam, Tep)
@@ -28,11 +30,11 @@ class Separate(BaseController):
         # wTe = r.fkine(r.q, fast=True)
         # wTe = r._base.A[:] / 2 + r.fkine(r.q, fast=True) / 2
         wTe = r._base.A[:] @ sm.SE3(1.1281 * 3 / 5, 0, 0).A
-        
+
         Tep_temp = sm.SE3(Tep[:3, 3]).A
         Tep_temp[:2, 3] -= Tep[:2, 0] * 0.2
         eTep = np.linalg.inv(wTe) @ Tep
-        
+
         # Spatial error
         et = np.sum(np.abs(eTep[:2, -1]))
 
@@ -47,14 +49,15 @@ class Separate(BaseController):
         Q[:2, :2] *= 1.0 / et
 
         # Slack component of Q
-        Q[r.n :, r.n :] = (1.0 / et) * np.eye(6)
+        Q[r.n:, r.n:] = (1.0 / et) * np.eye(6)
 
         v, _ = rtb.p_servo(wTe, Tep, 1.5)
 
         v[2:] *= 0
 
         # The equality contraints
-        Aeq = np.c_[r.jacobe(r.q, start="base0", end="base_link", tool=sm.SE3(1.1281, 0, 0).A, fast=True), np.zeros((6, 8)), np.eye(6)]
+        Aeq = np.c_[r.jacobe(r.q, start="base0", end="base_link", tool=sm.SE3(
+            1.1281, 0, 0).A, fast=True), np.zeros((6, 8)), np.eye(6)]
         beq = v.reshape((6,))
 
         Aeq_arm = np.c_[np.zeros((8, 2)), np.eye(8), np.zeros((8, 6))]
@@ -86,7 +89,7 @@ class Separate(BaseController):
         # )
         c = np.concatenate(
             (np.zeros(2), np.zeros(8), np.zeros(6))
-        )    
+        )
 
         # Get base to face end-effector
         kε = 0.5
@@ -99,17 +102,18 @@ class Separate(BaseController):
         lb = -np.r_[r.qdlim[: r.n], 100 * np.ones(6)]
         ub = np.r_[r.qdlim[: r.n], 100 * np.ones(6)]
 
-
         # Simple camera PID
         wTc = r_cam.fkine(r_cam.q, fast=True)
         cTep = np.linalg.inv(wTc) @ Tep
 
         # Spatial error
-        head_rotation, head_angle, _ = BaseController.transform_between_vectors(np.array([1, 0, 0]), cTep[:3, 3])
+        head_rotation, head_angle, _ = BaseController.transform_between_vectors(
+            np.array([1, 0, 0]), cTep[:3, 3])
 
-        yaw = max(min(head_rotation.rpy()[2] * 10, r_cam.qdlim[3]), -r_cam.qdlim[3])
-        pitch = max(min(head_rotation.rpy()[1] * 10, r_cam.qdlim[4]), -r_cam.qdlim[4])
-
+        yaw = max(min(head_rotation.rpy()[
+                  2] * 10, r_cam.qdlim[3]), -r_cam.qdlim[3])
+        pitch = max(
+            min(head_rotation.rpy()[1] * 10, r_cam.qdlim[4]), -r_cam.qdlim[4])
 
         # Solve for the joint velocities dq
         qd = qp.solve_qp(Q, c, Ain, bin, Aeq, beq, lb=lb, ub=ub)
@@ -128,8 +132,6 @@ class Separate(BaseController):
             return True, qd, qd_cam
         else:
             return False, qd, qd_cam
-
-
 
     def step_separate_arm(self, r, r_cam, Tep):
 
@@ -152,7 +154,7 @@ class Separate(BaseController):
         Q[:2, :2] *= 1.0 / et
 
         # Slack component of Q
-        Q[r.n :, r.n :] = (1.0 / et) * np.eye(6)
+        Q[r.n:, r.n:] = (1.0 / et) * np.eye(6)
 
         v, _ = rtb.p_servo(wTe, Tep, 1.5)
 
@@ -189,7 +191,8 @@ class Separate(BaseController):
 
         # Linear component of objective function: the manipulability Jacobian
         c = np.concatenate(
-            (np.zeros(2), -r.jacobm(start=r.links[3]).reshape((r.n - 2,)), np.zeros(6))
+            (np.zeros(2), -
+             r.jacobm(start=r.links[3]).reshape((r.n - 2,)), np.zeros(6))
         ) * 0
 
         # Get base to face end-effector
@@ -203,17 +206,18 @@ class Separate(BaseController):
         lb = -np.r_[r.qdlim[: r.n], 10 * np.ones(6)]
         ub = np.r_[r.qdlim[: r.n], 10 * np.ones(6)]
 
-
         # Simple camera PID
         wTc = r_cam.fkine(r_cam.q, fast=True)
         cTep = np.linalg.inv(wTc) @ Tep
 
         # Spatial error
-        head_rotation, head_angle, _ = BaseController.transform_between_vectors(np.array([1, 0, 0]), cTep[:3, 3])
+        head_rotation, head_angle, _ = BaseController.transform_between_vectors(
+            np.array([1, 0, 0]), cTep[:3, 3])
 
-        yaw = max(min(head_rotation.rpy()[2] * 10, r_cam.qdlim[3]), -r_cam.qdlim[3])
-        pitch = max(min(head_rotation.rpy()[1] * 10, r_cam.qdlim[4]), -r_cam.qdlim[4])
-
+        yaw = max(min(head_rotation.rpy()[
+                  2] * 10, r_cam.qdlim[3]), -r_cam.qdlim[3])
+        pitch = max(
+            min(head_rotation.rpy()[1] * 10, r_cam.qdlim[4]), -r_cam.qdlim[4])
 
         # Solve for the joint velocities dq
         qd = qp.solve_qp(Q, c, Ain, bin, Aeq, beq, lb=lb, ub=ub)

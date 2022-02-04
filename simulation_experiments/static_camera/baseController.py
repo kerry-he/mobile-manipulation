@@ -1,8 +1,9 @@
 """
 @author Rhys Newbury
 """
-
 import numpy as np
+
+
 class BaseController():
     def __init__(self):
         pass
@@ -18,13 +19,13 @@ class BaseController():
 
     def isInCollision(self, panda, collision, n):
         c_Ain, c_bin, d_in = panda.link_collision_damper(
-                collision,
-                panda.q[:n],
-                0.3,
-                0.2,
-                1.0,
-                start=panda.link_dict["panda_link1"],
-                end=panda.link_dict["panda_hand"],
+            collision,
+            panda.q[:n],
+            0.3,
+            0.2,
+            1.0,
+            start=panda.link_dict["panda_link1"],
+            end=panda.link_dict["panda_hand"],
         )
         if isinstance(d_in, float):
             return d_in < 0
@@ -34,10 +35,10 @@ class BaseController():
             return min(d_in) < 0
 
     def calcVelocityDamper(self, panda, collisions, NUM_OBJECTS, n, Ain=None, bin=None):
-        
+
         updateDamper = Ain is not None and bin is not None
 
-        occluded = [False] * NUM_OBJECTS       
+        occluded = [False] * NUM_OBJECTS
         for (index, collision) in enumerate(collisions):
 
             # Form the velocity damper inequality contraint for each collision
@@ -53,10 +54,10 @@ class BaseController():
                 end=panda.link_dict["panda_hand"],
             )
             # c_end = timeit.default_timer()
-            
 
             if updateDamper and c_Ain is not None and c_bin is not None:
-                Ain, bin = self.updateVelDamper(c_Ain, c_bin, Ain, bin, NUM_OBJECTS, index)
+                Ain, bin = self.updateVelDamper(
+                    c_Ain, c_bin, Ain, bin, NUM_OBJECTS, index)
 
             # print(d_in)
             if isinstance(d_in, float):

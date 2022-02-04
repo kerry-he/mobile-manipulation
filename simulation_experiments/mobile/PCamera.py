@@ -4,7 +4,8 @@
 Base on: Jesse Haviland
 """
 from baseController import BaseController
-import numpy as np, math
+import numpy as np
+import math
 import roboticstoolbox as rtb
 import spatialgeometry as sg
 import spatialmath as sm
@@ -33,7 +34,7 @@ class PCamera(BaseController):
         Q[-4, -4] *= 1000
 
         # Slack component of Q
-        Q[r.n :, r.n :] = (1.0 / et) * np.eye(6)
+        Q[r.n:, r.n:] = (1.0 / et) * np.eye(6)
 
         v, _ = rtb.p_servo(wTe, Tep, 1.5)
 
@@ -60,11 +61,12 @@ class PCamera(BaseController):
 
         Ain_torso, bin_torso = r.joint_velocity_damper(0.0, 0.05, r.n)
         Ain[2, 2] = Ain_torso[2, 2]
-        bin[2] = bin_torso[2]    
+        bin[2] = bin_torso[2]
 
         # Linear component of objective function: the manipulability Jacobian
         c = np.concatenate(
-            (np.zeros(2), -r.jacobm(start=r.links[3]).reshape((r.n - 2,)), np.zeros(6))
+            (np.zeros(2), -
+             r.jacobm(start=r.links[3]).reshape((r.n - 2,)), np.zeros(6))
         )
 
         # Get base to face end-effector
@@ -82,16 +84,18 @@ class PCamera(BaseController):
         qd = qp.solve_qp(Q, c, Ain, bin, Aeq, beq, lb=lb, ub=ub)
         qd = qd[: r.n]
 
-
         # Simple camera PID
         wTc = r_cam.fkine(r_cam.q, fast=True)
         cTep = np.linalg.inv(wTc) @ Tep
 
         # Spatial error
-        head_rotation, head_angle, _ = BaseController.transform_between_vectors(np.array([1, 0, 0]), cTep[:3, 3])
+        head_rotation, head_angle, _ = BaseController.transform_between_vectors(
+            np.array([1, 0, 0]), cTep[:3, 3])
 
-        yaw = max(min(head_rotation.rpy()[2] * 50, r_cam.qdlim[3]), -r_cam.qdlim[3])
-        pitch = max(min(head_rotation.rpy()[1] * 50, r_cam.qdlim[4]), -r_cam.qdlim[4])
+        yaw = max(min(head_rotation.rpy()[
+                  2] * 50, r_cam.qdlim[3]), -r_cam.qdlim[3])
+        pitch = max(
+            min(head_rotation.rpy()[1] * 50, r_cam.qdlim[4]), -r_cam.qdlim[4])
 
         qd_cam = np.r_[qd[:3], yaw, pitch]
 

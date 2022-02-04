@@ -3,7 +3,8 @@
 """
 
 from baseController import BaseController
-import numpy as np, math
+import numpy as np
+import math
 from resources.static_camera.MoveIt import CONSIDER_COLLISIONS
 import roboticstoolbox as rtb
 import spatialgeometry as sg
@@ -11,12 +12,12 @@ import spatialmath as sm
 import qpsolvers as qp
 from scipy.spatial.transform import Rotation as R
 
-
 import rospy
 import moveit_commander
 import moveit_msgs.msg
 import geometry_msgs.msg
-import copy, timeit
+import copy
+import timeit
 import spatialmath as sm
 from baseController import BaseController
 
@@ -26,10 +27,10 @@ CONSIDER_COLLISIONS = True
 class MoveIt(BaseController):
 
     def __init__(self):
-        
+
         rospy.init_node('kerry_MoveIt')
         self.arm_commander = moveit_commander.MoveGroupCommander('manipulator')
-        
+
         self.robot = moveit_commander.RobotCommander()
         self.display_trajectory_publisher = rospy.Publisher(
             '/move_group/display_planned_path',
@@ -57,10 +58,12 @@ class MoveIt(BaseController):
 
     def step(self, r, r_cam, Tep, centroid_sight):
         if not self.separate_arrived:
-            self.separate_arrived, qd, camera_qd = self.step_separate_base(r, r_cam, Tep)
+            self.separate_arrived, qd, camera_qd = self.step_separate_base(
+                r, r_cam, Tep)
 
             if self.seperate_arrived:
-                self.plan_success = self.plan_arm(r, r_cam, Tep, centroid_sight)
+                self.plan_success = self.plan_arm(
+                    r, r_cam, Tep, centroid_sight)
 
             return self.seperate_arrived, qd, camera_qd
         else:
@@ -68,17 +71,15 @@ class MoveIt(BaseController):
 
     def plan_arm(self, r, r_cam, Tep, centroid_sight):
 
-
         wTc = r_cam.fkine(r_cam.q, fast=True)
-        
+
         for offset in np.linspace(0, 1, num=10):
             if CONSIDER_COLLISIONS:
                 success = self.add_vision_ray(
-                    camera_pose = wTc.A[:3, 3], 
-                    object_pose = Tep.A[:3, 3],
-                    offset_percentage = offset,
-                    index = 0)            
-
+                    camera_pose=wTc.A[:3, 3],
+                    object_pose=Tep.A[:3, 3],
+                    offset_percentage=offset,
+                    index=0)
 
             position = Tep.A[:3, 3]
 
@@ -92,8 +93,7 @@ class MoveIt(BaseController):
             else:
                 self.remove_vision_ray(0)
 
-
-    def add_vision_ray(self, camera_pose, object_pose, offset_percentage = 0.01, index=0):
+    def add_vision_ray(self, camera_pose, object_pose, offset_percentage=0.01, index=0):
         '''
         camera_pose: np.array [x, y, z]
         object_pose: np.array [x, y, z]
@@ -106,12 +106,14 @@ class MoveIt(BaseController):
         length = np.linalg.norm(object_pose - camera_pose)
         offset_distance = offset_percentage * length
         cylinder_orientation_vector_z = (object_pose - camera_pose) / length
-        center_offset = -1 * cylinder_orientation_vector_z * (offset_distance/2)
-        axis = np.cross(np.array([0,0,1]), cylinder_orientation_vector_z)
-        angle = np.arccos(np.dot(np.array([0,0,1]), cylinder_orientation_vector_z))
+        center_offset = -1 * cylinder_orientation_vector_z * \
+            (offset_distance/2)
+        axis = np.cross(np.array([0, 0, 1]), cylinder_orientation_vector_z)
+        angle = np.arccos(
+            np.dot(np.array([0, 0, 1]), cylinder_orientation_vector_z))
         angle_axis = sm.SE3.AngleAxis(angle, axis)
         orientation = R.from_matrix(angle_axis.A[0:3, 0:3]).as_quat()
-        
+
         p.pose.position.x = center[0] + center_offset[0]
         p.pose.position.y = center[1] + center_offset[1]
         p.pose.position.z = center[2] + center_offset[2]
@@ -120,20 +122,20 @@ class MoveIt(BaseController):
         p.pose.orientation.z = orientation[2]
         p.pose.orientation.w = orientation[3]
 
-        self.scene.add_cylinder(self.generate_cylinder_name(index), p, length - offset_distance, 0.05)
-        return self.check_object(cylinder_exists=True, name = self.generate_cylinder_name(index))
-
+        self.scene.add_cylinder(self.generate_cylinder_name(
+            index), p, length - offset_distance, 0.05)
+        return self.check_object(cylinder_exists=True, name=self.generate_cylinder_name(index))
 
     def step_separate_base(self, r, r_cam, Tep):
 
         # wTe = r.fkine(r.q, fast=True)
         # wTe = r._base.A[:] / 2 + r.fkine(r.q, fast=True) / 2
         wTe = r._base.A[:] @ sm.SE3(1.1281 * 3 / 5, 0, 0).A
-        
+
         Tep_temp = sm.SE3(Tep[:3, 3]).A
         Tep_temp[:2, 3] -= Tep[:2, 0] * 0.2
         eTep = np.linalg.inv(wTe) @ Tep
-        
+
         # Spatial error
         et = np.sum(np.abs(eTep[:2, -1]))
 
@@ -148,14 +150,15 @@ class MoveIt(BaseController):
         Q[:2, :2] *= 1.0 / et
 
         # Slack component of Q
-        Q[r.n :, r.n :] = (1.0 / et) * np.eye(6)
+        Q[r.n:, r.n:] = (1.0 / et) * np.eye(6)
 
         v, _ = rtb.p_servo(wTe, Tep, 1.5)
 
         v[2:] *= 0
 
         # The equality contraints
-        Aeq = np.c_[r.jacobe(r.q, start="base0", end="base_link", tool=sm.SE3(1.1281, 0, 0).A, fast=True), np.zeros((6, 8)), np.eye(6)]
+        Aeq = np.c_[r.jacobe(r.q, start="base0", end="base_link", tool=sm.SE3(
+            1.1281, 0, 0).A, fast=True), np.zeros((6, 8)), np.eye(6)]
         beq = v.reshape((6,))
 
         Aeq_arm = np.c_[np.zeros((8, 2)), np.eye(8), np.zeros((8, 6))]
@@ -187,7 +190,7 @@ class MoveIt(BaseController):
         # )
         c = np.concatenate(
             (np.zeros(2), np.zeros(8), np.zeros(6))
-        )    
+        )
 
         # Get base to face end-effector
         kε = 0.5
@@ -200,17 +203,18 @@ class MoveIt(BaseController):
         lb = -np.r_[r.qdlim[: r.n], 100 * np.ones(6)]
         ub = np.r_[r.qdlim[: r.n], 100 * np.ones(6)]
 
-
         # Simple camera PID
         wTc = r_cam.fkine(r_cam.q, fast=True)
         cTep = np.linalg.inv(wTc) @ Tep
 
         # Spatial error
-        head_rotation, head_angle, _ = BaseController.transform_between_vectors(np.array([1, 0, 0]), cTep[:3, 3])
+        head_rotation, head_angle, _ = BaseController.transform_between_vectors(
+            np.array([1, 0, 0]), cTep[:3, 3])
 
-        yaw = max(min(head_rotation.rpy()[2] * 10, r_cam.qdlim[3]), -r_cam.qdlim[3])
-        pitch = max(min(head_rotation.rpy()[1] * 10, r_cam.qdlim[4]), -r_cam.qdlim[4])
-
+        yaw = max(min(head_rotation.rpy()[
+                  2] * 10, r_cam.qdlim[3]), -r_cam.qdlim[3])
+        pitch = max(
+            min(head_rotation.rpy()[1] * 10, r_cam.qdlim[4]), -r_cam.qdlim[4])
 
         # Solve for the joint velocities dq
         qd = qp.solve_qp(Q, c, Ain, bin, Aeq, beq, lb=lb, ub=ub)
@@ -253,7 +257,7 @@ class MoveIt(BaseController):
         return f"{self.cylinder_name}_{index}"
 
     def move_pose(self, pose, quaternion):
-        
+
         pose_goal = self.commander.get_current_pose().pose
 
         pose_goal.position.x = pose[0]
@@ -274,32 +278,33 @@ class MoveIt(BaseController):
         self.commander.set_pose_target(pose_goal)
         start_time = timeit.default_timer()
         plan = self.commander.plan()
-        
+
         end_time = timeit.default_timer()
 
-        self.planningTime = end_time - start_time        
+        self.planningTime = end_time - start_time
         self.commander.execute(plan[1])
         self.plan = plan[1]
         return plan[0]
 
-
     def cleanup(self):
         self.scene.remove_world_object(self.generate_cylinder_name(0))
-        self.check_object(cylinder_exists=False, name = self.generate_cylinder_name(0))
+        self.check_object(cylinder_exists=False,
+                          name=self.generate_cylinder_name(0))
 
     def step_separate_arm(self, r, r_cam, Tep):
 
         if not self.plan_success:
             raise NotImplementedError("todo")
-           
+
         step = self.plan.joint_trajectory.points[self.index]
         qd = step.velocities
 
         self.index += 1
         arrived = self.index == len(self.plan.joint_trajectory.points) - 1
 
-        time_from_start = step.time_from_start.secs + step.time_from_start.nsecs/1000000000
+        time_from_start = step.time_from_start.secs + \
+            step.time_from_start.nsecs/1000000000
         self.prev_timestep = time_from_start - self.curr_time
         self.curr_time = time_from_start
 
-        return arrived, qd, [0,0]  
+        return arrived, qd, [0, 0]

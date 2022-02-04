@@ -1,5 +1,6 @@
 {
     "python.analysis.extraPaths": [
         "D:\\conda\\envs\\mobile\\Lib\\site-packages\\"
-    ]
+    ],
+    "editor.formatOnSave": true
 }

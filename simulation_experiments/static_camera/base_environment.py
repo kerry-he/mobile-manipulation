@@ -101,7 +101,8 @@ def spawn_objects(addToEnv=False):
         angle = np.random.uniform(0, 2 * np.pi)
         radius = np.random.uniform(0.4, 0.7)
         height = np.random.uniform(0, 0.5)
-        target_pos = np.array([radius * np.cos(angle), radius * np.sin(angle), height])
+        target_pos = np.array(
+            [radius * np.cos(angle), radius * np.sin(angle), height])
 
         middle = (camera_pos + target_pos) / 2
         R, _, _ = transform_between_vectors(
@@ -122,7 +123,8 @@ def spawn_objects(addToEnv=False):
             else:
                 color = [0, 255, 0]
             # Make a target
-            target = sg.Sphere(radius=0.02, base=sm.SE3(*target_pos), color=color)
+            target = sg.Sphere(radius=0.02, base=sm.SE3(
+                *target_pos), color=color)
             spheres.append(target)
             env.add(s0)
             env.add(target)
@@ -234,7 +236,8 @@ for i in range(1000):
 
             total += NUM_OBJECTS
             time += current_dt
-            time_blocking = np.add(current_dt * np.array(occluded), time_blocking)
+            time_blocking = np.add(
+                current_dt * np.array(occluded), time_blocking)
             mean_manip.append(panda.manipulability(panda.q))
 
             if time > 60:

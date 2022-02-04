@@ -1,7 +1,9 @@
 """
 @author Kerry He
 """
+import numpy as np
 finished_ang = False
+
 
 def step_pid(r, r_cam, Tep):
 
@@ -16,8 +18,8 @@ def step_pid(r, r_cam, Tep):
     vb_ang = np.arctan2(bTbp[1, -1], bTbp[0, -1]) * 50 * min(1.0, vb_lin/8.0)
 
     vb_lin = max(min(vb_lin, r_cam.qdlim[1]), -r_cam.qdlim[1])
-    vb_ang = max(min(vb_ang, r_cam.qdlim[0]), -r_cam.qdlim[0])  
-    
+    vb_ang = max(min(vb_ang, r_cam.qdlim[0]), -r_cam.qdlim[0])
+
     global finished_ang
     if not finished_ang:
         vb_lin = 0
@@ -30,19 +32,18 @@ def step_pid(r, r_cam, Tep):
     else:
         arrived = False
 
-
-
-
     # Simple camera PID
     wTc = r_cam.fkine(r_cam.q, fast=True)
     cTep = np.linalg.inv(wTc) @ Tep
 
     # Spatial error
-    head_rotation, head_angle, _ = transform_between_vectors(np.array([1, 0, 0]), cTep[:3, 3])
+    head_rotation, head_angle, _ = transform_between_vectors(
+        np.array([1, 0, 0]), cTep[:3, 3])
 
-    yaw = max(min(head_rotation.rpy()[2] * 10, r_cam.qdlim[3]), -r_cam.qdlim[3])
-    pitch = max(min(head_rotation.rpy()[1] * 10, r_cam.qdlim[4]), -r_cam.qdlim[4])
-
+    yaw = max(min(head_rotation.rpy()[2] * 10,
+              r_cam.qdlim[3]), -r_cam.qdlim[3])
+    pitch = max(min(head_rotation.rpy()[1]
+                * 10, r_cam.qdlim[4]), -r_cam.qdlim[4])
 
     # Solve for the joint velocities dq
     qd = np.array([vb_ang, vb_lin, 0., 0., 0., 0., 0., 0., 0., 0.])
@@ -58,4 +59,4 @@ def step_pid(r, r_cam, Tep):
     print(vb_ang, vb_lin)
     print(bt)
 
-    return arrived, qd, qd_cam        
+    return arrived, qd, qd_cam

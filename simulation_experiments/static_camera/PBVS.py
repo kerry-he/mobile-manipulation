@@ -15,6 +15,7 @@ from itertools import product
 import csv
 from baseController import BaseController
 
+
 class PBVS(BaseController):
     def step(self, panda, Tep, NUM_OBJECTS, n, collisions):
 
@@ -24,6 +25,7 @@ class PBVS(BaseController):
         # Set the Panda's joint velocities
         qd = np.linalg.pinv(panda.jacobe(panda.q)) @ v
 
-        occluded, _, _ = self.calcVelocityDamper(panda, collisions, NUM_OBJECTS, n)
+        occluded, _, _ = self.calcVelocityDamper(
+            panda, collisions, NUM_OBJECTS, n)
 
         return qd, arrived, occluded
