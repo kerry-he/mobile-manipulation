@@ -1,7 +1,8 @@
 
 #!/usr/bin/env python
 """
-@author Jesse Haviland
+@author Kerry He, Rhys Newbury
+Based on work by: Jesse Haviland
 """
 
 import traceback

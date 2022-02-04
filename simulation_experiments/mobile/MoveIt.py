@@ -1,4 +1,6 @@
-
+"""
+@author Rhys Newbury, Tin Tran
+"""
 
 from baseController import BaseController
 import numpy as np, math

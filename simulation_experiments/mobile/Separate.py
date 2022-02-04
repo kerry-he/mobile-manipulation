@@ -1,4 +1,7 @@
-
+"""
+@author Kerry He, Rhys Newbury
+Base on: Jesse Haviland
+"""
 
 from baseController import BaseController
 import numpy as np, math

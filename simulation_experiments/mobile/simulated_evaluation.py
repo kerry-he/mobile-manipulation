@@ -1,3 +1,7 @@
+"""
+@author Kerry He, Rhys Newbury
+Base on: Jesse Haviland
+"""
 from sqlite3 import Cursor
 from resources.mobile.Holistic import Holistic
 from resources.mobile.PCamera import PCamera

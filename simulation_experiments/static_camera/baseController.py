@@ -1,3 +1,7 @@
+"""
+@author Rhys Newbury
+"""
+
 import numpy as np
 class BaseController():
     def __init__(self):

@@ -1,3 +1,7 @@
+"""
+@author Jesse Haviland
+"""
+
 from baseController import BaseController
 import numpy as np, math
 import roboticstoolbox as rtb

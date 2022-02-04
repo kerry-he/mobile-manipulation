@@ -1,4 +1,6 @@
-# from base_environment import NUM_OBJECTS
+"""
+@author Tin Tran, Rhys Newbury
+"""
 import roboticstoolbox as rtb
 import spatialmath as sm
 import numpy as np

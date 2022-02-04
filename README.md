@@ -12,8 +12,13 @@ https://github.com/rhys-newbury/robotics-toolbox-python
 
 You can also manually modify your installation of robotics toolbox, following the instructions inside the `robotics_toolbox_changes` folder.
 
-
-
-We also reccomend the customized version of swift, which has some fixes for headless mode and compatible with Python 3.6:
+We also recommend the customized version of swift, which has some fixes for headless mode and compatible with Python 3.6:
 https://github.com/rhys-newbury/swift
+
+There is also a requirements.txt (for pip) and an environment.yml (for conda) to help set up the environments. 
+
+
+
+
+
 

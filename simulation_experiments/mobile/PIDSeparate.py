@@ -1,3 +1,6 @@
+"""
+@author Kerry He
+"""
 finished_ang = False
 
 def step_pid(r, r_cam, Tep):

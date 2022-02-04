@@ -1,3 +1,7 @@
+"""
+@author Rhys Newbury
+"""
+
 import numpy as np
 import spatialmath as sm
 from typing import Tuple, list
