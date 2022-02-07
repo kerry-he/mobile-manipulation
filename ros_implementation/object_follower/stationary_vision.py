@@ -30,7 +30,7 @@ class Alg(Enum):
     PBVS = 4
     MoveIt = 5
 
-CURRENT_ALG = Alg.NEO
+CURRENT_ALG = Alg.Ours
 
 if CURRENT_ALG == Alg.Ours:
     from ours import Ours as Controller
@@ -56,7 +56,7 @@ class StationaryManipController:
         self.SIMULATED = False
 
         self.env = swift.Swift()
-        self.env.launch(realtime=True)
+        self.env.launch(realtime=False, headless=False)
 
         self.panda = rtb.models.Panda()
         if self.SIMULATED:
@@ -70,7 +70,7 @@ class StationaryManipController:
         self.controller = Controller()
 
         self.camera = None
-        self.NUM_OBJECTS = 5
+        self.NUM_OBJECTS = 1
         self.min_idx = None
         self.obj = [None] * self.NUM_OBJECTS
         self.collisions = []
@@ -101,7 +101,7 @@ class StationaryManipController:
         self.gripper_action = actionlib.SimpleActionClient('/franka_gripper/gripper_action', GripperCommandAction)
         self.gripper_action.wait_for_server()
 
-        self.main_timer = rospy.Timer(rospy.Duration(0.002), self.main_callback)      
+        self.main_timer = rospy.Timer(rospy.Duration(0.002), self.main_callback)
 
 
     def initialise_collision(self):
@@ -136,26 +136,23 @@ class StationaryManipController:
                 # print(sm.SE3(middle) * R)
 
                 # line of sight between camera and object we want to avoid
-                s0 = sg.Cylinder(
-                    radius=0.001,
-                    length=np.linalg.norm(camera_pos - target_pos),
-                    base=sm.SE3(middle) * R,
-                )
-                self.collisions.append(s0)
-                self.env.add(s0)
+                if len(self.collisions) == 0:
+                    s0 = sg.Cylinder(
+                        radius=0.001,
+                        length=np.linalg.norm(camera_pos - target_pos),
+                        base=sm.SE3(middle) * R,
+                    )
+                    self.collisions.append(s0)
+                    self.env.add(s0)
+                else:
+                    self.collisions[0]._base = (sm.SE3(middle) * R).A
         
 
             # Find out where the desired grasped object is
-            init_guess = np.array([0.4 , 0.5, 0.])
-            dist_to_guess = [0.] * self.NUM_OBJECTS
-            for i in range(self.NUM_OBJECTS):
-                dist_to_guess[i] = np.linalg.norm(init_guess - self.obj[i].t)
-            
-            min_idx = dist_to_guess.index(min(dist_to_guess))
-            self.min_idx = min_idx
+            self.min_idx = 0
 
-            self.wTep = sm.SE3(self.obj[min_idx]) * sm.SE3.Rx(np.pi)
-            self.wTep.A[2, -1] = 0.07
+            self.wTep = sm.SE3(self.obj[0]) * sm.SE3.Rx(np.pi)
+            self.wTep.A[2, -1] = 0.3
 
             if CURRENT_ALG == Alg.NEO:
                 gripper_z_axis = np.subtract(self.wTep.A[:3, 3], [0.22026039175, -0.0303012059091, 0.497918336168])
@@ -167,16 +164,18 @@ class StationaryManipController:
                 self.wTep.A[:3, 1] = gripper_y_axis
                 self.wTep.A[:3, 2] = [0,0,-1]
 
-            self.finish_pub.publish("Start")
-            self.start_time = timeit.default_timer()
-
-
-        self.env.step(0.001)
+            
 
     def jointpos_callback(self, data): 
+        start_time = timeit.default_timer()
+        print("Begin loop")
+        self.initialise_collision()
+        if self.SIMULATED:
+            self.env.step(0.025)     
+        else:
+            self.env.step(0.001)     
 
         if not self.initialised:
-            self.initialise_collision()
             return
 
         # Read joint positions
@@ -193,37 +192,28 @@ class StationaryManipController:
         #     self.wTep = self.panda.fkine(self.panda.q) * sm.SE3.Tx(0.0) * sm.SE3.Ty(0.0) * sm.SE3.Tz(0.1)
 
         # v, arrived = rtb.p_servo(self.panda.fkine(self.panda.q), self.wTep, 1)
-        # self.qd = np.linalg.pinv(self.panda.jacobe(self.panda.q)) @ v
+        # self.qd = np.linalg.pinv(self.panda.jacobe(self.panda.q)) @ v    
 
-        if not self.waypoint:
-            self.ax_goal.base = sm.SE3(0., 0., 0.1) * self.wTep
-            qd, self.waypoint, occluded = self.controller.step(self.panda,
-                sm.SE3(0., 0., 0.1) * self.wTep, 
-                self.NUM_OBJECTS,
-                self.panda.n,
-                self.collisions,
-                self.table,
-                self.min_idx)
+        self.ax_goal.base = sm.SE3(0., 0., 0.1) * self.wTep
+        qd, _, occluded = self.controller.step(self.panda,
+            sm.SE3(0., 0., 0.1) * self.wTep, 
+            self.NUM_OBJECTS,
+            self.panda.n,
+            self.collisions,
+            self.table,
+            self.min_idx)
 
-            self.qd = qd[:self.panda.n] / 2
-            self.occluded = np.add(occluded, self.occluded)
-            if self.waypoint:
-                print("reached waypoint :)")
-        else:
-            self.ax_goal.base = self.wTep
-            # self.qd, self.arrived, occluded = self.controller.step(self.panda, self.wTep, self.NUM_OBJECTS, self.panda.n, self.collisions, self.table)
-            v, _ = rtb.p_servo(self.panda.fkine(self.panda.q), self.wTep, 1, 0.02)
-            self.arrived = np.linalg.norm(self.panda.fkine(self.panda.q).A[:3, 3] - self.wTep.A[:3, 3]) < 0.01
-            if np.linalg.norm(v) < 0.05:
-                v *= 0.05 / np.linalg.norm(v)
-            v[3:] = 0
-            self.qd = np.linalg.pinv(self.panda.jacobe(self.panda.q)) @ v            
+        self.qd = qd[:self.panda.n] / 2
+        self.occluded = np.add(occluded, self.occluded)
+ 
 
         if self.SIMULATED:
             self.panda.qd = self.qd
+      
 
         # self.qd /= 3
-        self.env.step()
+
+        print(1 / (timeit.default_timer() - start_time))
 
             
     def main_callback(self, event):

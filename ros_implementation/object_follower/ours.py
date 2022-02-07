@@ -15,14 +15,14 @@ from itertools import product
 import csv, timeit
 from baseController import BaseController
 
-pos_p = 4
-pos_w = 50000
+pos_p = 0
+pos_w = 500
 
 rot_p = 1
 rot_w = 1
 
-col_p = 1
-col_w = 100000
+col_p = 0
+col_w = 1000000
 
 
 PROGRAM_TIME = 0
@@ -102,7 +102,7 @@ class Ours(BaseController):
 
         # The minimum angle (in radians) in which the joint is allowed to approach
         # to its limit
-        ps = 0.05
+        ps = 0.3
 
         # The influence angle (in radians) in which the velocity damper
         # becomes active
