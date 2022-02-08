@@ -15,7 +15,7 @@ from baseController import BaseController
 
 class NEO(BaseController):
 
-    def step(self, panda, Tep, NUM_OBJECTS, n, collisions):
+    def step(self, panda, Tep, NUM_OBJECTS, n, collisions, index, wTcamp, wTtp):
         # The pose of the Panda's end-effector
         Te = panda.fkine(panda.q)
 
