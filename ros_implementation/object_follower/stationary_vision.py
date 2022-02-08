@@ -25,10 +25,8 @@ from enum import Enum
 
 class Alg(Enum):
     Ours = 1
-    Slack = 2
-    NEO = 3
-    PBVS = 4
-    MoveIt = 5
+    NEO = 2
+ 
 
 CURRENT_ALG = Alg.Ours
 

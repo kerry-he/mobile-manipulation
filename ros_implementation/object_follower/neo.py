@@ -60,8 +60,8 @@ class NEO(BaseController):
         # Form the joint limit velocity damper
         Ain[:n, :n], bin[:n] = panda.joint_velocity_damper(ps, pi, n)
 
-        occluded, _, _ = self.calcVelocityDamper(panda, collisions, NUM_OBJECTS, n)
-
+        occluded, _, _ = self.calcVelocityDamper(
+            panda, collisions, NUM_OBJECTS, n)
 
         c_Ain, c_bin, d_in = panda.link_collision_damper(
             table,
@@ -69,16 +69,17 @@ class NEO(BaseController):
             0.25,
             0.0,
             1.0,
-            start=panda.link_dict["panda_link2"], # Base is already colliding with the table
+            # Base is already colliding with the table
+            start=panda.link_dict["panda_link2"],
             end=panda.link_dict["panda_hand"],
-        )        
+        )
 
         if c_Ain is not None and c_bin is not None:
             c_Ain = np.c_[c_Ain, np.zeros((c_Ain.shape[0], 6))]
 
             # Stack the inequality constraints
             Ain = np.r_[Ain, c_Ain]
-            bin = np.r_[bin, c_bin]  
+            bin = np.r_[bin, c_bin]
 
         # Linear component of objective function: the manipulability Jacobian
         c = np.r_[-panda.jacobm(panda.q).reshape((n,)), np.zeros(6)]
@@ -91,4 +92,3 @@ class NEO(BaseController):
         qd = qp.solve_qp(Q, c, Ain, bin, Aeq, beq, lb=lb, ub=ub)
 
         return qd, arrived, occluded
-
