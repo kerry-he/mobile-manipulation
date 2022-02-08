@@ -12,8 +12,8 @@ class KalmanRos:
 
         self.dt = 1/30.0
 
-        self.vel_x = [0] * 10
-        self.vel_y = [0] * 10
+        self.vel_x = [0] * 5
+        self.vel_y = [0] * 5
 
 
         rospy.Timer(rospy.Duration(1/30.0), self.main)

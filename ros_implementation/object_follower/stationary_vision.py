@@ -103,6 +103,51 @@ class StationaryManipController:
 
         self.main_timer = rospy.Timer(rospy.Duration(0.002), self.main_callback)
 
+        
+
+        # Apple detection and velocity estimation
+        self.apple_dt = 1 / 30.0
+
+        self.vel_x = [0] * 5
+        self.vel_y = [0] * 5
+
+        self.prev_pos = None
+
+        self.apple_timer = rospy.Timer(rospy.Duration(self.apple_dt), self.apple_callback)
+
+
+
+        # Metrics
+        self.count = 0
+        self.total_dist = 0
+
+        self.metric_mode = False
+
+
+
+    def apple_callback(self, event):
+        try:
+            (trans, rot) = self.tf_listener.lookupTransform('panda_link0', 'apple0', rospy.Time(0))
+            self.obj[0] = sm.SE3(trans)
+        except:
+            return
+
+        if self.prev_pos is None:
+            self.prev_pos = [trans[0], trans[1]]
+            return
+
+        current_vel_x = (self.prev_pos[0] - trans[0]) / self.apple_dt
+        current_vel_y = (self.prev_pos[1] - trans[1]) / self.apple_dt
+
+        self.vel_x = [current_vel_x] + self.vel_x[:-1]
+        self.vel_y = [current_vel_y] + self.vel_y[:-1]
+      
+        if len(self.collisions) > 0:
+            self.collisions[0].v[:2] = np.array([np.mean(self.vel_x), np.mean(self.vel_y)])
+
+        self.prev_pos = [trans[0], trans[1]]        
+
+
 
     def initialise_collision(self):
         # Read all positions of camera and objects
@@ -113,13 +158,16 @@ class StationaryManipController:
             # print(e)
             pass
 
-        for i in range(self.NUM_OBJECTS):
-            try:
-                (trans, rot) = self.tf_listener.lookupTransform('panda_link0', 'apple' + str(i), rospy.Time(0))
-                self.obj[i] = sm.SE3(trans)
-            except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException) as e:
-                # print(e)
-                pass
+        # for i in range(self.NUM_OBJECTS):
+        #     try:
+        #         (trans, rot) = self.tf_listener.lookupTransform('panda_link0', 'apple' + str(i), rospy.Time(0))
+        #         self.obj[i] = sm.SE3(trans)
+                
+        #     except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException) as e:
+        #         # print(e)
+        #         pass
+
+
 
         self.initialised = all(self.obj + [self.camera])
 
@@ -168,10 +216,10 @@ class StationaryManipController:
 
     def jointpos_callback(self, data): 
         start_time = timeit.default_timer()
-        print("Begin loop")
+
         self.initialise_collision()
         if self.SIMULATED:
-            self.env.step(0.025)     
+            self.env.step(0.025)
         else:
             self.env.step(0.001)     
 
@@ -201,7 +249,9 @@ class StationaryManipController:
             self.panda.n,
             self.collisions,
             self.table,
-            self.min_idx)
+            self.min_idx,
+            self.camera.t,
+            self.obj[0].t)
 
         self.qd = qd[:self.panda.n] / 2
         self.occluded = np.add(occluded, self.occluded)
@@ -209,12 +259,24 @@ class StationaryManipController:
 
         if self.SIMULATED:
             self.panda.qd = self.qd
-      
 
-        # self.qd /= 3
 
-        print(1 / (timeit.default_timer() - start_time))
 
+        # Calculate distance metric
+        if not self.metric_mode:
+            # If apple is stationary, assume experiment hasn't started or has finished
+            self.metric_mode = np.linalg.norm(self.collisions[0].v[:2]) > 0.075
+            print("Average distance error metric: ", self.total_dist / max(1, self.count))
+        else:
+            # Else, update the distance metric
+            p_panda = self.panda.fkine(self.panda.q).t
+            p_apple = self.obj[0].t
+
+            self.total_dist += np.linalg.norm((p_apple - p_panda)[:2])
+            self.count += 1
+
+            self.metric_mode = np.linalg.norm(self.collisions[0].v[:2]) > 0.025
+        
             
     def main_callback(self, event):
         # Publish base and joint velocities

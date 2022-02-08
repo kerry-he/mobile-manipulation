@@ -12,7 +12,7 @@ class BaseController():
     def cleanup(self, NUM_OBJECTS):
         pass
 
-    def calcVelocityDamper(self, panda, collisions, NUM_OBJECTS, n, Ain=None, bin=None):
+    def calcVelocityDamper(self, panda, collisions, NUM_OBJECTS, n, Ain=None, bin=None, wTcamp=None, wTtp=None):
         
         updateDamper = Ain is not None and bin is not None
 
@@ -30,6 +30,8 @@ class BaseController():
                 1.0,
                 start=panda.link_dict["panda_link1"],
                 end=panda.link_dict["panda_hand"],
+                wTcamp=wTcamp,
+                wTtp=wTtp
             )
             # c_end = timeit.default_timer()
             

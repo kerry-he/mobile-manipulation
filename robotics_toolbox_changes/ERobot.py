@@ -2026,6 +2026,8 @@ class ERobot(BaseERobot):
         end=None,
         start=None,
         collision_list=None,
+        wTcamp=None,
+        wTtp=None
     ):
         """
         Formulates an inequality contraint which, when optimised for will
@@ -2075,7 +2077,6 @@ class ERobot(BaseERobot):
                 lpTcp = -wTlp + wTcp
 
                 norm = lpTcp / d
-                # norm = self.fkine(q, end=link, fast=True)[:3, :3] @ norm
                 norm_h = np.expand_dims(np.r_[norm, 0, 0, 0], axis=0)
 
                 tool = SE3((np.linalg.inv(self.fkine(q, end=link, fast=True)) @ SE3(wTlp).A)[:3, 3])
@@ -2085,11 +2086,13 @@ class ERobot(BaseERobot):
                 )
                 Je[:3, :] = self._base.A[:3, :3] @ Je[:3, :]
 
-
-                # print(Je)
-
                 n_dim = Je.shape[1]
                 dp = norm_h @ shape.v
+                if wTcamp is not None and wTtp is not None:
+                    length = np.linalg.norm(wTcp - wTcamp)
+                    total_length = np.linalg.norm(wTtp - wTcamp)
+                    dp *= length/total_length
+
                 l_Ain = np.zeros((1, self.n))
                 l_Ain[0, :n_dim] = norm_h @ Je
                 l_bin = (xi * (d - ds) / (di - ds)) + 0
@@ -2098,7 +2101,7 @@ class ERobot(BaseERobot):
                 l_bin = None
 
             return l_Ain, l_bin, d, wTcp
-        
+
         for link in links:
             if link.isjoint:
                 j += 1
@@ -2127,7 +2130,7 @@ class ERobot(BaseERobot):
                     else:
                         din = np.r_[din, d]
 
-        return Ain, bin
+        return Ain, bin, din
 
     def vision_collision_damper(
         self,
