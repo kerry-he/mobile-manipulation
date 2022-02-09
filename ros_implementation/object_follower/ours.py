@@ -171,10 +171,11 @@ class Ours(BaseController):
         # Linear component of objective function: the manipulability Jacobian
         c = np.r_[-panda.jacobm(panda.q).reshape((n,)), np.zeros(N_SLACK_TERMS)]
 
+        VEL_SCALE = 1/5.0 * 5
         # The lower and upper bounds on the joint velocity and slack variable
-        lb = -np.r_[panda.qdlim[:n]*1/5, 10 * np.ones(3), 10 * np.ones(1), np.zeros(N_SLACK_TERMS -4)]
+        lb = -np.r_[panda.qdlim[:n]*VEL_SCALE, 10 * np.ones(3), 10 * np.ones(1), np.zeros(N_SLACK_TERMS -4)]
         # lb = -np.r_[panda.qdlim[:n], 10 * np.ones(N_SLACK_TERMS)]
-        ub = np.r_[panda.qdlim[:n]*1/5, 10 * np.ones(N_SLACK_TERMS)]
+        ub = np.r_[panda.qdlim[:n]*VEL_SCALE, 10 * np.ones(N_SLACK_TERMS)]
 
         # s = timeit.default_timer()
         qd = qp.solve_qp(Q, c, Ain, bin, Aeq, beq, lb=lb, ub=ub)

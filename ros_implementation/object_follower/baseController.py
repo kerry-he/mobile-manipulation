@@ -26,7 +26,7 @@ class BaseController():
                 collision,
                 panda.q[:n],
                 0.3,
-                0.1,
+                0.05,
                 1.0,
                 start=panda.link_dict["panda_link1"],
                 end=panda.link_dict["panda_hand"],

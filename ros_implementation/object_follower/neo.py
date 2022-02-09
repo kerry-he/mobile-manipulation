@@ -85,8 +85,10 @@ class NEO(BaseController):
         c = np.r_[-panda.jacobm(panda.q).reshape((n,)), np.zeros(6)]
 
         # The lower and upper bounds on the joint velocity and slack variable
-        lb = -np.r_[panda.qdlim[:n]*1/5, 10 * np.ones(6)]
-        ub = np.r_[panda.qdlim[:n]*1/5, 10 * np.ones(6)]
+
+        VEL_SCALE = 1/5.0 * 5
+        lb = -np.r_[panda.qdlim[:n]*VEL_SCALE, 10 * np.ones(6)]
+        ub = np.r_[panda.qdlim[:n]*VEL_SCALE, 10 * np.ones(6)]
 
         # Solve for the joint velocities dq
         qd = qp.solve_qp(Q, c, Ain, bin, Aeq, beq, lb=lb, ub=ub)

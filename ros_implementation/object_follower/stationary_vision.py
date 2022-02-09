@@ -13,6 +13,7 @@ import spatialmath as sm
 import qpsolvers as qp
 import numpy as np
 import math
+import cv2
 
 from sensor_msgs.msg import JointState
 from std_msgs.msg import String
@@ -21,7 +22,13 @@ from control_msgs.msg import JointJog, GripperCommandGoal, GripperCommandAction
 from rv_msgs.msg import JointVelocity, ManipulatorState
 from std_msgs.msg import String
 
+from sensor_msgs.msg import Image, CameraInfo
+from cv_bridge import CvBridge, CvBridgeError
+
 from enum import Enum
+
+from std_srvs.srv import Empty
+from dynamic_workspace_controller.srv import WorkspaceTrajectory
 
 class Alg(Enum):
     Ours = 1
@@ -29,6 +36,21 @@ class Alg(Enum):
  
 
 CURRENT_ALG = Alg.Ours
+# SPEED = 100 # mm/s
+# ARGS = []
+# TRAJ_NAME = "Flower"
+
+
+SPEEDS = [50, 100]
+TRAJECTORIES = [
+    ("Circle", []), 
+    ("Flower", []),
+    ("DoubleInfinity", []),
+    ("DiagonalDoubleInfinity", []),
+    ("InscribedCircle", []),
+    ("RadiusedRandomWalk", [100, 50.0/140, 10.0/140, 0]),
+    ("RadiusedRandomWalk", [100, 50.0/140, 10.0/140, 1])
+]
 
 if CURRENT_ALG == Alg.Ours:
     from ours import Ours as Controller
@@ -48,10 +70,16 @@ def transform_between_vectors(a, b):
 
     return sm.SE3.AngleAxis(angle, axis), angle, axis
 
+
+STARTUP, INITTING, RUNNING, FINISHED = 0, 1, 2, 3
+
 class StationaryManipController:
     def __init__(self):
+        self.trial_number = 0
 
         self.SIMULATED = False
+
+        self.state = STARTUP
 
         self.env = swift.Swift()
         self.env.launch(realtime=False, headless=False)
@@ -113,13 +141,44 @@ class StationaryManipController:
 
         self.apple_timer = rospy.Timer(rospy.Duration(self.apple_dt), self.apple_callback)
 
+        self.image_sub = rospy.Subscriber(
+            "/camera/color/image_raw", Image, self.image_callback, queue_size=1)
 
+        self.bridge = CvBridge()
+        self.video_out = None
+        self.image_shape = None
+
+        
+        self.log_file = open("results.csv", "a")
 
         # Metrics
         self.count = 0
         self.total_dist = 0
 
         self.metric_mode = False
+
+        # Service for sending robot home
+        rospy.wait_for_service('/arm/home')
+
+        self.go_home = rospy.ServiceProxy('/arm/home', Empty)
+
+        rospy.wait_for_service('/run_workspace_trajectory')
+        self.run_workspace_traj = rospy.ServiceProxy('/run_workspace_trajectory', WorkspaceTrajectory)
+
+        rospy.wait_for_service('/reset_workspace')
+
+        self.reset_workspace_top = rospy.ServiceProxy('/reset_workspace_top', Empty)
+        self.reset_workspace_center = rospy.ServiceProxy('/reset_workspace', Empty)
+
+        # if TRAJ_NAME in ["Circle"]:
+        #     self.reset_workspace = rospy.ServiceProxy('/reset_workspace_top', Empty)
+        # else:
+        #     self.reset_workspace = rospy.ServiceProxy('/reset_workspace', Empty)
+        
+
+        print("Finished init")
+
+
 
 
 
@@ -150,7 +209,7 @@ class StationaryManipController:
     def initialise_collision(self):
         # Read all positions of camera and objects
         try:
-            (trans, rot) = self.tf_listener.lookupTransform('panda_link0', 'camera_rgb_frame', rospy.Time(0))
+            (trans, rot) = self.tf_listener.lookupTransform('panda_link0', 'overhead_cam', rospy.Time(0))
             self.camera = sm.SE3(trans)
         except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException) as e:
             # print(e)
@@ -259,40 +318,142 @@ class StationaryManipController:
             self.panda.qd = self.qd
 
 
-
-        # Calculate distance metric
-        if not self.metric_mode:
-            # If apple is stationary, assume experiment hasn't started or has finished
-            self.metric_mode = np.linalg.norm(self.collisions[0].v[:2]) > 0.075
-            print("Average distance error metric: ", self.total_dist / max(1, self.count))
-        else:
-            # Else, update the distance metric
+        if self.metric_mode:
             p_panda = self.panda.fkine(self.panda.q).t
             p_apple = self.obj[0].t
 
             self.total_dist += np.linalg.norm((p_apple - p_panda)[:2])
             self.count += 1
 
-            self.metric_mode = np.linalg.norm(self.collisions[0].v[:2]) > 0.025
+        # Calculate distance metric
+        # if not self.metric_mode:
+        #     # If apple is stationary, assume experiment hasn't started or has finished
+        #     self.metric_mode = np.linalg.norm(self.collisions[0].v[:2]) > 0.075
+        #     print("Average distance error metric: ", self.total_dist / max(1, self.count))
+        # else:
+        #     # Else, update the distance metric
+        #     p_panda = self.panda.fkine(self.panda.q).t
+        #     p_apple = self.obj[0].t
+
+        #     self.total_dist += np.linalg.norm((p_apple - p_panda)[:2])
+        #     self.count += 1
+
+        #     self.metric_mode = np.linalg.norm(self.collisions[0].v[:2]) > 0.025
         
-            
+    
+    def change_state(self, new_state):
+        self.state_change_time = time.time()
+        self.state = new_state
+        print("Changing to state: ", self.state)
+
+    def image_callback(self, data):
+        if self.video_out is not None:
+            try:
+                cv_image = self.bridge.imgmsg_to_cv2(data, "bgr8")
+                self.video_out.write(cv_image)
+            except CvBridgeError as e:
+                print(e)
+
+
+        # Will only happen once to get image shape
+        if self.image_shape is None:
+            try:
+                cv_image = self.bridge.imgmsg_to_cv2(data, "bgr8")
+                self.image_shape = cv_image.shape
+            except CvBridgeError as e:
+                print(e)
+
+
+    def create_video_writer(self, trajectory_name, speed, trial_number, method):
+        if method == Alg.Ours:
+            method = "VMC"
+        elif method == Alg.NEO:
+            method = "NEO"
+
+        filename = f"trial_{trajectory_name}_speed{speed}_{method}_{trial_number}.avi"
+        fourcc = cv2.VideoWriter_fourcc(*'MJPG')
+        self.video_out = cv2.VideoWriter(filename, fourcc, 30.0, (self.image_shape[1], self.image_shape[0]))
+
     def main_callback(self, event):
-        # Publish base and joint velocities
-        if not self.arrived:
+        if self.initialised:
+            traj_name, args = TRAJECTORIES[int(self.trial_number / len(SPEEDS))]
+            speed = SPEEDS[self.trial_number % len(SPEEDS)]
+
+            if traj_name in ["Circle"]:
+                self.reset_workspace = self.reset_workspace_top
+            else:
+                self.reset_workspace = self.reset_workspace_center
+
+        if self.state == STARTUP:
+            if self.initialised:
+                self.change_state(INITTING)
+            pass
+
+        elif self.state == INITTING:
+
+            
+
+            self.reset_workspace()
+            self.go_home()
+            time.sleep(2)
+
+            self.total_dist = 0
+            self.count = 0
+            self.metric_mode = True
+            
+
+            self.change_state(RUNNING)
+            
+            self.create_video_writer(traj_name, speed, self.trial_number, CURRENT_ALG)
+            self.run_workspace_traj(traj_name, speed * 60, args)
+
+        elif self.state == RUNNING:
+            
             qd = JointVelocity()
             qd.joints = list(self.qd)
-            # print(qd)
             if not self.SIMULATED:
                 self.jointvel_pub.publish(qd)
-        elif not self.SIMULATED:
-            if not self.FINISHED:
-                total_time = timeit.default_timer() - self.start_time
-                
-                print("total_time:", total_time)
-                print("vision score", self.occluded)
 
-                self.finish_pub.publish("")
-                self.FINISHED = True
+            if time.time() - self.state_change_time > 30:
+                # Experiment running for x seconds. Time to stop it. 
+                self.change_state(FINISHED)
+
+        elif self.state == FINISHED:
+            print("Experiment Finished!")
+            ave_error = self.total_dist / max(1, self.count)
+            print("Average distance error metric: ", ave_error)
+
+            self.log_file.write(f"{traj_name}, {speed}, {self.trial_number}, {CURRENT_ALG}, {ave_error}\n")
+            self.log_file.flush()
+            self.state = -1
+            self.video_out.release()
+            self.video_out = None
+            self.go_home()
+            self.reset_workspace()
+            self.trial_number += 1
+            time.sleep(2)
+            self.state = INITTING
+
+        
+        
+
+
+        # Publish base and joint velocities
+        # if not self.arrived:
+        #     qd = JointVelocity()
+        #     qd.joints = list(self.qd)
+        #     # print(qd)
+        #     if not self.SIMULATED:
+        #         self.jointvel_pub.publish(qd)
+        # elif not self.SIMULATED:
+        #     if not self.FINISHED:
+        #         total_time = timeit.default_timer() - self.start_time
+                
+        #         print("total_time:", total_time)
+        #         print("vision score", self.occluded)
+
+        #         self.finish_pub.publish("")
+        #         self.FINISHED = True
 
             # goal = GripperCommandGoal()
             # goal.command.position = 0.0
@@ -300,11 +461,10 @@ class StationaryManipController:
             # self.gripper_action.wait_for_result()
 
 
-        else:
-            print("SIMULATION COMPLETE :)")
+        # else:
+        #     print("SIMULATION COMPLETE :)")
 
         return     
-
 
 if __name__ == '__main__':
     try:

@@ -25,18 +25,18 @@ class image_converter:
         self.bridge = CvBridge()
 
         self.image_sub = rospy.Subscriber(
-            "/camera/rgb/image_color", Image, self.callback, queue_size=1)
+            "/camera/color/image_raw", Image, self.callback, queue_size=1)
         self.camera_info_sub = rospy.Subscriber(
-            "/camera/rgb/camera_info", CameraInfo, self.cameraCallback, queue_size=1)
+            "/camera/color/camera_info", CameraInfo, self.cameraCallback, queue_size=1)
 
-        self.appleHeight = 1.44
+        self.appleHeight = 1.22
         self.x = None
         self.y = None
 
         self.br = tf.TransformBroadcaster()
 
     def cameraCallback(self, data):
-        #   print("camera callback")
+        
         if self.cameraMatrix is None:
             self.cameraMatrix = np.array([[data.K[0], data.K[1], data.K[2]], [
                                          data.K[3], data.K[4], data.K[5]], [data.K[6], data.K[7], data.K[8]]])
@@ -46,22 +46,26 @@ class image_converter:
 #       self.depth_image = self.bridge.imgmsg_to_cv2(data, "passthrough")
 
     def callback(self, data):
-        t1 = timeit.default_timer()
+        # print("image")
+        
         if self.cameraMatrixInv is None:
             return
 
+        t1 = timeit.default_timer()
         try:
             cv_image = self.bridge.imgmsg_to_cv2(data, "bgr8")
         except CvBridgeError as e:
             print(e)
 
+        
         lower1 = np.array([0, 100, 100])
         upper1 = np.array([5, 255, 255])
 
         lower2 = np.array([170, 100, 100])
         upper2 = np.array([180, 255, 255])
 
-        colors = np.array([0, 0, 255])
+        # colors = np.array([0, 0, 255])
+        colors = (0, 0, 255)
 
         hsv = cv2.cvtColor(cv_image, cv2.COLOR_BGR2HSV)
 
@@ -71,6 +75,8 @@ class image_converter:
         mask = mask1 + mask2
         mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
         mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+        # t3 = timeit.default_timer()
+        
 
         contour = cv2.findContours(
             mask.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[-2]
@@ -85,12 +91,16 @@ class image_converter:
 
             # Specify min size of object to be detected
             if radius > 1:
+                # print(colors)
                 cv2.circle(cv_image, (int(self.x), int(self.y)),
                            int(radius), colors, 2)
                 cv2.putText(cv_image, "OBJECT", (int(self.x - (radius+1)),
                             int(self.y - (radius+1))), cv2.FONT_HERSHEY_COMPLEX, 0.8, colors, 2)
 
         if self.x is None or self.y is None:
+            print("No object")
+            # cv2.imshow("Image window", cv_image)
+            # cv2.waitKey(1)
             return
 
         t2 = timeit.default_timer()
@@ -99,7 +109,8 @@ class image_converter:
         # cv2.imshow("mask window", mask)
 
         # cv2.imshow("Image window", mask)
-        # cv2.waitKey(3)
+        # cv2.imshow("Image window", cv_image)
+        # cv2.waitKey(1)
 
         world_x, world_y, world_z = np.matmul(
             self.cameraMatrixInv, np.array([self.x, self.y, 1])) * self.appleHeight
@@ -109,7 +120,7 @@ class image_converter:
                                   0, 0, 0),
                               rospy.Time.now(),
                               "apple0",
-                              data.header.frame_id)
+                              "overhead_cam")
 
         # print(world_x, world_y, world_z)
 
@@ -122,6 +133,7 @@ class image_converter:
 def main(args):
     rospy.init_node('image_converter', anonymous=True)
     ic = image_converter()
+    print("Running")
     try:
         rospy.spin()
     except KeyboardInterrupt:
