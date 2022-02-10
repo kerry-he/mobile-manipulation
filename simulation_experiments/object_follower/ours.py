@@ -49,7 +49,7 @@ class Ours(BaseController):
         col_p = _col_p
         col_w = _col_w
 
-    def step(self, panda, Tep, NUM_OBJECTS, n, collisions):
+    def step(self, panda, Tep, NUM_OBJECTS, n, collisions, wTcamp, wTtp):
         global considerCollisions
         # The pose of the Panda's end-effector
         start = timeit.default_timer()
@@ -158,7 +158,7 @@ class Ours(BaseController):
         beq = np.r_[beq, np.cos(gamma)]
 
         occluded, Ain, bin = self.calcVelocityDamper(
-            panda, collisions, NUM_OBJECTS, n, Ain, bin)
+            panda, collisions, NUM_OBJECTS, n, Ain, bin, wTcamp, wTtp)
 
         # Linear component of objective function: the manipulability Jacobian
         c = np.r_[-panda.jacobm(panda.q).reshape((n,)),

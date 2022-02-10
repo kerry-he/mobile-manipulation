@@ -27,7 +27,7 @@ class Alg(Enum):
     MoveIt = 5
 
 
-CURRENT_ALG = Alg.NEO
+CURRENT_ALG = Alg.Ours
 
 if CURRENT_ALG == Alg.Ours:
     from ours import Ours as Controller
@@ -92,6 +92,7 @@ def move_object(ee_position, collisions, spheres):
     new_y = center_y + radius * np.cos(angle)
 
     target_pos = [new_x, new_y, z]
+    collisions[0].v[:3] = (target_pos - prev_position) / 0.01
 
     spheres[0]._base[:3, 3] = target_pos
     middle = (camera_pos + target_pos) / 2
@@ -259,14 +260,15 @@ for i in range(1000):
         try:
 
             _s = timeit.default_timer()
-            qd, arrived, occluded = controller.step(
-                panda, Tep, NUM_OBJECTS, n, collisions
-            )
 
             current_pose = panda.fkine(panda.q)
 
             target, distance = move_object(
                 current_pose.A[:3, 3], collisions, spheres)
+
+            qd, arrived, occluded = controller.step(
+                panda, Tep, NUM_OBJECTS, n, collisions, camera_pos, target.base.t
+            )                
 
             Tep.A[:3, 3] = target.base.t
             Tep.A[2, 3] = 0.6
@@ -275,6 +277,7 @@ for i in range(1000):
             panda.qd[:n] = qd[:n]
 
             current_dt = dt if CURRENT_ALG != Alg.MoveIt else controller.prev_timestep
+            collisions[0].v[:3] = 0
             env.step(current_dt)
 
             _e = timeit.default_timer()
