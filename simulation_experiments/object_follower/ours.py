@@ -46,7 +46,7 @@ class Ours(BaseController):
         col_p = _col_p
         col_w = _col_w
 
-    def step(self, panda, Tep, NUM_OBJECTS, n, collisions, index, wTcamp, wTtp):
+    def step(self, panda, Tep, NUM_OBJECTS, n, collisions, wTcamp, wTtp):
         global considerCollisions
         # The pose of the Panda's end-effector
         start = timeit.default_timer()
@@ -92,8 +92,7 @@ class Ours(BaseController):
         # 3 objects, 3rd index -> -1
             # 2nd index -> 2
             # 1st index -> -3
-        Q[-(NUM_OBJECTS - index), -(NUM_OBJECTS - index)
-          ] = col_w * np.power(et, col_p)
+        Q[-1, -1] = col_w * np.power(et, col_p)
 
         # Q[-1, -1] = et * et * et * et * et * 100
 
