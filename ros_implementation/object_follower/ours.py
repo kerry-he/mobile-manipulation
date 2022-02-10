@@ -24,7 +24,6 @@ rot_w = 10
 col_p = 0
 col_w = 10000
 
-
 PROGRAM_TIME = 0
 considerCollisions = True
 

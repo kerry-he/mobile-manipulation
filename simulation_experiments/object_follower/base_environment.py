@@ -44,7 +44,7 @@ all_times = []
 
 # Launch the simulator Swift
 env = swift.Swift()
-env.launch(realtime=True, headless=False)
+env.launch(realtime=False, headless=True)
 
 # Create a Panda robot object
 panda = rtb.models.Panda()
@@ -173,7 +173,7 @@ def spawn_object(addToEnv=False):
         # print(k, "in collision: ", controller.isInCollision(panda, collisions[k], n))
         # input()
 
-        if addToEnv or controller.isInCollision(panda, collisions[k], n):
+        if addToEnv or not controller.isInCollision(panda, collisions[k], n):
             k += 1
 
     return spheres[-1]
@@ -255,6 +255,7 @@ for i in range(1000):
     time_blocking = [0] * NUM_OBJECTS
 
     xy_distances = []
+    angular_velocity = np.random.uniform(0.005, 0.005*2)
 
     while not arrived:
         try:

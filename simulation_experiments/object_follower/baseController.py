@@ -11,7 +11,7 @@ class BaseController():
     def init(self, spheres, camera_pose, panda, Tep):
         return True
 
-    def step(self, panda, Tep, NUM_OBJECTS, n, collisions):
+    def step(self, panda, Tep, NUM_OBJECTS, n, collisions, index, wTcamp, wTtp):
         pass
 
     def cleanup(self, NUM_OBJECTS):
@@ -53,7 +53,7 @@ class BaseController():
                 start=panda.link_dict["panda_link1"],
                 end=panda.link_dict["panda_hand"],
                 wTcamp=wTcamp,
-                wTtp=wTtp,
+                wTtp=wTtp
             )
             # c_end = timeit.default_timer()
 
