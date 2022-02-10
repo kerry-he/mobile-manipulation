@@ -29,6 +29,10 @@ class NEO(BaseController):
         # to approach the goal. Gain is set to 1.0
         v, arrived = rtb.p_servo(Te, Tep, 1, 0.01)
 
+        TARGET_VEL = 1.0
+        if np.linalg.norm(v[:3]) < 0.5:
+            v *= 0.5 / np.linalg.norm(v[:3])        
+
         # Gain term (lambda) for control minimisation
         Y = 0.01
 
@@ -72,5 +76,7 @@ class NEO(BaseController):
 
         # Solve for the joint velocities dq
         qd = qp.solve_qp(Q, c, Ain, bin, Aeq, beq, lb=lb, ub=ub)
+
+        qd /= 4.25
 
         return qd, arrived, occluded
