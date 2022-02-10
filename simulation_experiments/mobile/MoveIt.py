@@ -16,6 +16,7 @@ import rospy
 import moveit_commander
 import moveit_msgs.msg
 import geometry_msgs.msg
+from moveit_msgs.srv import GetStateValidity, GetStateValidityRequest
 import copy
 import timeit
 import spatialmath as sm
@@ -29,7 +30,11 @@ class MoveIt(BaseController):
     def __init__(self):
 
         rospy.init_node('kerry_MoveIt')
-        self.arm_commander = moveit_commander.MoveGroupCommander('manipulator')
+        self.group_name = "arm_with_torso"
+        self.arm_commander = moveit_commander.MoveGroupCommander(
+            self.group_name)
+
+        self.consider_colls = CONSIDER_COLLISIONS
 
         self.robot = moveit_commander.RobotCommander()
         self.display_trajectory_publisher = rospy.Publisher(
@@ -42,6 +47,10 @@ class MoveIt(BaseController):
 
         self.index = 0
         self.planningTime = 0
+
+        rospy.wait_for_service("check_state_validity")
+        self.state_valid_service = rospy.ServiceProxy(
+            'check_state_validity', GetStateValidity)
 
     def move_camera_pose(self, joint_angles):
         raise NotImplementedError("not sure if this is needed")
@@ -68,6 +77,22 @@ class MoveIt(BaseController):
             return self.seperate_arrived, qd, camera_qd
         else:
             return self.step_separate_arm(r, r_cam, Tep)
+
+    def generateValidArmConfig(self):
+        while True:
+
+            q = np.random.uniform(low=[0, 0, 0, -1.6056, -1.221, 0, -2.251, 0, -2.160, 0],
+                                  high=[0, 0, 0, 1.6056, 1.518, 6.283,
+                                  2.251, 6.283, 2.160, 6.283],
+                                  size=10
+                                  )
+            req = GetStateValidityRequest()
+            req.group_name = self.group_name
+            req.robot_state = self.moveit_commander.get_current_state()
+            req.robot_state.joint_state = list(q)
+            res = self.state_valid_service(req)
+            if res.valid:
+                return q
 
     def plan_arm(self, r, r_cam, Tep, centroid_sight):
 

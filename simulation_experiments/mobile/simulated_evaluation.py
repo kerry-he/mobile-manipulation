@@ -107,15 +107,25 @@ if __name__ == "__main__":
 
     controller = Controller()
 
+    arm_pose_file = "arm_poses.txt"
+
+    try:
+        arm_poses = open(arm_pose_file).readlines()
+        arm_poses = [x.split(",") for x in arm_poses]
+        arm_poses = [float(x) for y in arm_poses for x in y]
+    except:
+        raise Exception("You must create arm poses file using non-collison moveit first")
+
     for run in range(total_runs):
         ax_goal = sg.Axes(0.1)
 
         fetch = rtb.models.Fetch()
-        fetch.q = np.random.uniform(low=[0, 0, 0, -1.6056, -1.221, 0, -2.251, 0, -2.160, 0],
-                                    high=[0, 0, 0, 1.6056, 1.518, 6.283,
-                                          2.251, 6.283, 2.160, 6.283],
-                                    size=10
-                                    )
+        if CURRENT_ALG == Alg.MoveIt and not controller.consider_colls:
+            fetch.q = controller.generateValidArmConfig()
+            with open("arm_poses.txt", "a") as ap:
+                ap.write(",".join(map(str, list(fetch.q))))
+        else:
+            fetch.q = np.array(arm_poses[run])
 
         fetch_camera = rtb.models.FetchCamera()
         fetch_camera.q = fetch_camera.qr
