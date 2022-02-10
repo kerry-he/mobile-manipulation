@@ -113,6 +113,9 @@ if __name__ == "__main__":
         arm_poses = open(arm_pose_file).readlines()
         arm_poses = [x.split(",") for x in arm_poses]
         arm_poses = [float(x) for y in arm_poses for x in y]
+        if len(arm_poses) != total_runs:
+            raise Exception("arm poses is incorrect length")
+
     except:
         raise Exception("You must create arm poses file using non-collison moveit first")
 
