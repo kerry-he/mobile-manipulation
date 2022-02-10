@@ -256,7 +256,7 @@ for i in range(1000):
     xy_distances = []
     angular_velocity = np.random.uniform(0.005, 0.005*2)
 
-    while not arrived:
+    while True:
         try:
 
             _s = timeit.default_timer()
@@ -304,7 +304,7 @@ for i in range(1000):
     print("xy distance", np.average(xy_distances))
     print(time, time_blocking)
     print(f"Completed {i}/1000")
-    input()
+    # input()
 
     FILE = open(f"{CURRENT_ALG}_{NUM_OBJECTS}", "a")
     if CURRENT_ALG != Alg.MoveIt:
