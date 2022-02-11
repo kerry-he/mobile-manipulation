@@ -1,6 +1,4 @@
 from sqlite3 import Cursor
-from resources.mobile.Holistic import Holistic
-from resources.mobile.PCamera import PCamera
 import swift
 import roboticstoolbox as rtb
 import spatialgeometry as sg
@@ -10,7 +8,6 @@ import numpy as np
 import math
 import csv
 from enum import Enum
-from Controllers import *
 
 np.random.seed(1337)
 
@@ -21,7 +18,7 @@ class Alg(Enum):
     Holistic = 4
     MoveIt = 5
 
-CURRENT_ALG = Alg.Holistic
+CURRENT_ALG = Alg.MoveIt
 
 
 if CURRENT_ALG == Alg.Proposed:
@@ -94,7 +91,7 @@ def obj_in_vision(r, r_cam, Tep):
 if __name__ == "__main__":
 
     env = swift.Swift()
-    env.launch(realtime=False, headless=True)
+    env.launch(realtime=True, headless=False)
     # env.launch(realtime=True)
 
     total_runs = 1000
@@ -115,7 +112,7 @@ if __name__ == "__main__":
         fetch_camera = rtb.models.FetchCamera()
         fetch_camera.q = fetch_camera.qr
 
-        Controller.init(fetch.q, fetch_camera.qr)
+        controller.init(fetch.q, fetch_camera.qr)
 
 
         sight_base = sm.SE3.Ry(np.pi/2) * sm.SE3(0.0, 0.0, 2.5)
@@ -160,9 +157,13 @@ if __name__ == "__main__":
         while not arrived:
 
             try:
-                arrived, fetch.qd, fetch_camera.qd = controller.step(fetch, fetch_camera, wTep.A)
+                arrived, fetch.qd, fetch_camera.qd = controller.step(fetch, fetch_camera, wTep.A, centroid_sight)
             except Exception as e:
                 print(e)
+
+            if CURRENT_ALG == Alg.MoveIt and controller.failed:
+                arrived = False
+                break
 
             current_dt = dt if CURRENT_ALG != Alg.MoveIt else controller.prev_timestep
 
