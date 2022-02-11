@@ -3,6 +3,8 @@ import rospy
 import tf
 import numpy as np
 import time
+from datetime import datetime
+
 
 import swift
 import timeit
@@ -35,7 +37,7 @@ class Alg(Enum):
     NEO = 2
  
 
-CURRENT_ALG = Alg.Ours
+CURRENT_ALG = Alg.NEO
 # SPEED = 100 # mm/s
 # ARGS = []
 # TRAJ_NAME = "Flower"
@@ -46,10 +48,13 @@ TRAJECTORIES = [
     ("Circle", []), 
     ("Flower", []),
     ("DoubleInfinity", []),
-    ("DiagonalDoubleInfinity", []),
+    ("DiagonalDoubleInifinity", []),
     ("InscribedCircle", []),
     ("RadiusedRandomWalk", [100, 50.0/140, 10.0/140, 0]),
-    ("RadiusedRandomWalk", [100, 50.0/140, 10.0/140, 1])
+    ("RadiusedRandomWalk", [100, 50.0/140, 10.0/140, 1]),
+    ("Rectangle", [200.0, 200.0]),
+    ("Rectangle", [50.0, 200.0]),
+    ("Rectangle", [200.0, 50.0])
 ]
 
 if CURRENT_ALG == Alg.Ours:
@@ -370,16 +375,33 @@ class StationaryManipController:
         elif method == Alg.NEO:
             method = "NEO"
 
-        filename = f"trial_{trajectory_name}_speed{speed}_{method}_{trial_number}.avi"
+        date_time_str = datetime.now().strftime("%H:%M:%S")
+        filename_base = f"trial_{trajectory_name}_speed{speed}_{method}_{trial_number}_{date_time_str}"
         fourcc = cv2.VideoWriter_fourcc(*'MJPG')
-        self.video_out = cv2.VideoWriter(filename, fourcc, 30.0, (self.image_shape[1], self.image_shape[0]))
+        self.video_out = cv2.VideoWriter(filename_base + ".avi", fourcc, 30.0, (self.image_shape[1], self.image_shape[0]))
+        self.trial_log_file = open(filename_base + ".csv", "w")
+        self.trial_log_file.write("Time, EE x, EE y, EE z, EE qx, EE qy, EE qz, EE qw, Observed x, Observed y, Observed z, Actual x, Actual y, Actual z, Joint angles...\n")
+
+    def log_data(self):
+        (ee_trans, ee_rot) = self.tf_listener.lookupTransform('panda_link0', 'panda_EE', rospy.Time(0))
+        (observed_trans, ee_rot) = self.tf_listener.lookupTransform('panda_link0', 'apple0', rospy.Time(0))
+        (actual_trans, ee_rot) = self.tf_listener.lookupTransform('panda_link0', 'dynamic_workspace', rospy.Time(0))
+
+        log_vals = [time.time() - self.state_change_time, *ee_trans, *ee_rot, *observed_trans, *actual_trans, *self.panda.q]
+        log_str = ",".join([str(v) for v in log_vals])
+        # print(log_str)
+
+        self.trial_log_file.write(
+            log_str + "\n"
+        )
+
 
     def main_callback(self, event):
         if self.initialised:
             traj_name, args = TRAJECTORIES[int(self.trial_number / len(SPEEDS))]
             speed = SPEEDS[self.trial_number % len(SPEEDS)]
 
-            if traj_name in ["Circle"]:
+            if traj_name in ["Circle", "Rectangle"]:
                 self.reset_workspace = self.reset_workspace_top
             else:
                 self.reset_workspace = self.reset_workspace_center
@@ -411,9 +433,15 @@ class StationaryManipController:
             
             qd = JointVelocity()
             qd.joints = list(self.qd)
+            
             if not self.SIMULATED:
                 self.jointvel_pub.publish(qd)
+            
+            self.log_data()
+            
 
+
+        
             if time.time() - self.state_change_time > 30:
                 # Experiment running for x seconds. Time to stop it. 
                 self.change_state(FINISHED)
@@ -428,10 +456,13 @@ class StationaryManipController:
             self.state = -1
             self.video_out.release()
             self.video_out = None
+
+            self.trial_log_file.close()
+
             self.go_home()
             self.reset_workspace()
             self.trial_number += 1
-            time.sleep(2)
+            time.sleep(5)
             self.state = INITTING
 
         
