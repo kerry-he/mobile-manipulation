@@ -5,12 +5,12 @@
 from baseController import BaseController
 import numpy as np
 import math
-from resources.static_camera.MoveIt import CONSIDER_COLLISIONS
 import roboticstoolbox as rtb
 import spatialgeometry as sg
 import spatialmath as sm
 import qpsolvers as qp
 from scipy.spatial.transform import Rotation as R
+from visualization_msgs.msg import MarkerArray
 
 import rospy
 import moveit_commander
@@ -21,7 +21,11 @@ import copy
 import timeit
 import spatialmath as sm
 from baseController import BaseController
-
+import tf
+# from moveit_msgs.srv import GetStateValidity
+from moveit_msgs.msg import VisibilityConstraint, Constraints
+from geometry_msgs.msg import PoseStamped
+from moveit_msgs.msg import AttachedCollisionObject
 CONSIDER_COLLISIONS = True
 
 
@@ -36,6 +40,8 @@ class MoveIt(BaseController):
 
         self.consider_colls = CONSIDER_COLLISIONS
 
+        self.listener = tf.TransformListener()
+        
         self.robot = moveit_commander.RobotCommander()
         self.display_trajectory_publisher = rospy.Publisher(
             '/move_group/display_planned_path',
@@ -45,25 +51,56 @@ class MoveIt(BaseController):
         self.cylinder_name = "camera_vision"
         self.scene = moveit_commander.PlanningSceneInterface()
 
+        self.marker_pub = rospy.Publisher(
+            '/markersssssss',
+            MarkerArray,
+            queue_size=20)
+
+
         self.index = 0
         self.planningTime = 0
 
         rospy.wait_for_service("check_state_validity")
         self.state_valid_service = rospy.ServiceProxy(
             'check_state_validity', GetStateValidity)
+        # rospy.wait_for_service("/check_state_validity")
+        # self.checkCollison = rospy.ServiceProxy("/check_state_validity", GetStateValidity)
 
     def move_camera_pose(self, joint_angles):
-        raise NotImplementedError("not sure if this is needed")
+        print("not sure if this is needed")
 
     def init(self, init_joint_angles, init_head_angle):
 
-        self.seperate_arrived = False
+        self.separate_arrived = False
+        self.finished_ang = False
 
         self.move_joint_angle(init_joint_angles)
         self.move_camera_pose(init_head_angle)
 
         self.index = 0
         self.planningTime = 0
+        self.failed = False
+        self.prev_timestep = 0.025
+
+        # robot_state = self.commmander.get_current_state()
+        # robot_state.position = init_joint_angles
+
+
+
+    def move_joint_angle(self, angles):
+
+        # The go command can be called with joint values, poses, or without any
+        # parameters if you have already set the pose or joint target for the group
+        joint_goal = self.commander.get_current_joint_values()
+        joint_goal[:] = angles[2:]
+        
+        
+        # joint_goal[0] = angles[1]
+        print(len(angles), joint_goal, len(joint_goal))
+        self.commander.go(joint_goal, wait=True)
+
+        # Calling ``stop()`` ensures that there is no residual movement
+        self.commander.stop()
 
     def step(self, r, r_cam, Tep, centroid_sight):
         if not self.separate_arrived:
@@ -74,7 +111,7 @@ class MoveIt(BaseController):
                 self.plan_success = self.plan_arm(
                     r, r_cam, Tep, centroid_sight)
 
-            return self.seperate_arrived, qd, camera_qd
+            return False, qd, camera_qd
         else:
             return self.step_separate_arm(r, r_cam, Tep)
 
@@ -93,23 +130,58 @@ class MoveIt(BaseController):
             res = self.state_valid_service(req)
             if res.valid:
                 return q
+    def getCameraPosition(self):
+        self.listener.waitForTransform("/base_link", "/head_camera_rgb_frame", rospy.Time(), rospy.Duration(4.0))
+        (trans,rot) = self.listener.lookupTransform('/base_link', '/head_camera_rgb_frame', rospy.Time(0))
+        return trans
+
+    def getCameraPose(self):
+        self.listener.waitForTransform("/base_link", "/head_camera_rgb_frame", rospy.Time(), rospy.Duration(4.0))
+        (trans,rot) = self.listener.lookupTransform('/base_link', '/head_camera_rgb_frame', rospy.Time(0))
+
+        p = PoseStamped()
+
+        p.header.frame_id = "head_camera_rgb_frame"
+
+        p.pose.position.x = trans[0]
+        p.pose.position.y = trans[1]
+        p.pose.position.z = trans[2]
+
+        p.pose.orientation.x = rot[0]
+        p.pose.orientation.y = rot[1]
+        p.pose.orientation.z = rot[2]
+        p.pose.orientation.w = rot[3]
+
+        return p
 
     def plan_arm(self, r, r_cam, Tep, centroid_sight):
 
-        wTc = r_cam.fkine(r_cam.q, fast=True)
+    def plan_arm(self, r, r_cam, Tep, centroid_sight):
 
+        # wTc = r_cam.fkine(r_cam.q, fast=True)
+        wTb = r._base.A
+        bTw = np.linalg.inv(wTb)
+        # bTc = wTc @ bTw
+
+        bTo = bTw @ Tep
+        bTc = self.getCameraPosition()
+        print(Tep)
+        # print(wTc)
+        # input()
         for offset in np.linspace(0, 1, num=10):
             if CONSIDER_COLLISIONS:
                 success = self.add_vision_ray(
-                    camera_pose=wTc.A[:3, 3],
-                    object_pose=Tep.A[:3, 3],
-                    offset_percentage=offset,
-                    index=0)
+                    camera_pose = bTc, 
+                    object_pose = bTo[:3, 3],
+                    offset_percentage = offset,
+                    index = 0)            
+            # input("help")
 
-            position = Tep.A[:3, 3]
+
+            position = bTo[:3, 3]
 
             # orientation = sm.UnitQuaternion(Tep.A[:3, :3]).A
-            orientation = R.from_matrix(Tep.A[:3, :3]).as_quat()
+            orientation = R.from_matrix(bTo[:3, :3]).as_quat()
             success = self.move_pose(position, orientation)
             self.curr_time = 0
 
@@ -139,6 +211,8 @@ class MoveIt(BaseController):
         angle_axis = sm.SE3.AngleAxis(angle, axis)
         orientation = R.from_matrix(angle_axis.A[0:3, 0:3]).as_quat()
 
+        center = center + cylinder_orientation_vector_z * 0.01
+        
         p.pose.position.x = center[0] + center_offset[0]
         p.pose.position.y = center[1] + center_offset[1]
         p.pose.position.z = center[2] + center_offset[2]
@@ -177,7 +251,6 @@ class MoveIt(BaseController):
         # Slack component of Q
         Q[r.n:, r.n:] = (1.0 / et) * np.eye(6)
 
-        v, _ = rtb.p_servo(wTe, Tep, 1.5)
 
         v[2:] *= 0
 
@@ -186,47 +259,37 @@ class MoveIt(BaseController):
             1.1281, 0, 0).A, fast=True), np.zeros((6, 8)), np.eye(6)]
         beq = v.reshape((6,))
 
-        Aeq_arm = np.c_[np.zeros((8, 2)), np.eye(8), np.zeros((8, 6))]
-        beq_arm = np.zeros((8,))
+    # def step_pid(r, r_cam, Tep):
+    def step_separate_base(self, r, r_cam, Tep):
 
-        Aeq = np.r_[Aeq, Aeq_arm]
-        beq = np.r_[beq, beq_arm]
+        wTb = r._base.A
 
-        # The inequality constraints for joint limit avoidance
-        Ain = np.zeros((r.n + 6, r.n + 6))
-        bin = np.zeros(r.n + 6)
+        bTbp = np.linalg.inv(wTb) @ Tep
 
-        # The minimum angle (in radians) in which the joint is allowed to approach
-        # to its limit
-        ps = 0.1
+        # Spatial error
+        bt = np.sum(np.abs(bTbp[:2, -1]))
 
-        # The influence angle (in radians) in which the velocity damper
-        # becomes active
-        pi = 0.9
+        vb_lin = (np.linalg.norm(bTbp[:2, -1]) - 0.69) * 5
+        vb_ang = np.arctan2(bTbp[1, -1], bTbp[0, -1]) * 50 * min(1.0, vb_lin/8.0)
 
-        # Form the joint limit velocity damper
-        Ain[: r.n, : r.n], bin[: r.n] = r.joint_velocity_damper(ps, pi, r.n)
-        Ain[2:, 2:] = 0
-        bin[2:] = 0
+        vb_lin = max(min(vb_lin, r_cam.qdlim[1]), -r_cam.qdlim[1])
+        vb_ang = max(min(vb_ang, r_cam.qdlim[0]), -r_cam.qdlim[0])  
+        
 
-        # Linear component of objective function: the manipulability Jacobian
-        # c = np.concatenate(
-        #     (np.zeros(2), -r.jacobm(start=r.links[3]).reshape((r.n - 2,)), np.zeros(6))
-        # )
-        c = np.concatenate(
-            (np.zeros(2), np.zeros(8), np.zeros(6))
-        )
+        if not self.finished_ang:
+            vb_lin = 0
+            self.finished_ang = abs(vb_ang / 50) < 0.01
 
-        # Get base to face end-effector
-        kε = 0.5
-        bTe = r.fkine(r.q, include_base=False, fast=True)
-        θε = math.atan2(bTe[1, -1], bTe[0, -1])
-        ε = kε * θε
-        c[0] = -0
+        if bt < 0.7:
+            arrived = True
+            vb_lin = 0.0
+            vb_ang = 0.0
+        else:
+            arrived = False
+        print("bt", bt, bt < 1.15)
+        print(vb_lin, vb_ang)
+        print("bTbp[:3, -1]", bTbp[:3, -1])
 
-        # The lower and upper bounds on the joint velocity and slack variable
-        lb = -np.r_[r.qdlim[: r.n], 100 * np.ones(6)]
-        ub = np.r_[r.qdlim[: r.n], 100 * np.ones(6)]
 
         # Simple camera PID
         wTc = r_cam.fkine(r_cam.q, fast=True)
@@ -242,22 +305,18 @@ class MoveIt(BaseController):
             min(head_rotation.rpy()[1] * 10, r_cam.qdlim[4]), -r_cam.qdlim[4])
 
         # Solve for the joint velocities dq
-        qd = qp.solve_qp(Q, c, Ain, bin, Aeq, beq, lb=lb, ub=ub)
-        qd = qd[: r.n]
+        qd = np.array([vb_ang, vb_lin, 0., 0., 0., 0., 0., 0., 0., 0.])
+        qd_cam = np.array([vb_ang, vb_lin, 0., yaw, pitch])
 
-        qd_cam = np.r_[qd[:3], yaw, pitch]
-
-        if et > 0.5:
-            qd *= 0.7 / et
-            qd_cam *= 0.7 / et
+        if bt > 0.5:
+            qd *= 0.7 / bt
+            qd_cam *= 0.7 / bt
         else:
             qd *= 1.4
             qd_cam *= 1.4
 
-        if et < 0.03:
-            return True, qd, qd_cam
-        else:
-            return False, qd, qd_cam
+        return arrived, qd, qd_cam        
+
 
     def check_object(self, cylinder_exists, name, timeout=4):
         cylinder_name = name
@@ -295,6 +354,30 @@ class MoveIt(BaseController):
         pose_goal.orientation.z = float(quaternion[2])
         pose_goal.orientation.w = float(quaternion[3])
 
+        stamped = PoseStamped()
+        stamped.header.frame_id = "base_link"
+        stamped.pose = pose_goal
+
+        vc = VisibilityConstraint()
+        vc.target_pose = stamped
+        vc.sensor_pose = self.getCameraPose()
+        vc.cone_sides = 29
+        vc.max_view_angle = 45
+        vc.max_range_angle = 45
+        vc.sensor_view_direction = 2
+        vc.weight = 1.0
+
+        # self.marker_pub.publish(vc.get_markers())
+
+        cons = Constraints()
+        cons.visibility_constraints.append(vc)
+        self.commander.set_path_constraints(cons)
+
+        print(self.commander.get_path_constraints())
+        input()
+
+        # vc.sensor_frame_id
+
         # pose_goal = geometry_msgs.msg.Pose()
         # pose_goal.orientation.w = 1.0
         # pose_goal.position.x = 0.4
@@ -304,10 +387,12 @@ class MoveIt(BaseController):
         start_time = timeit.default_timer()
         plan = self.commander.plan()
 
+        self.commander.clear_path_constraints()
+        
         end_time = timeit.default_timer()
 
-        self.planningTime = end_time - start_time
-        self.commander.execute(plan[1])
+        self.planningTime = end_time - start_time        
+        # self.commander.execute(plan[1])
         self.plan = plan[1]
         return plan[0]
 
@@ -319,7 +404,9 @@ class MoveIt(BaseController):
     def step_separate_arm(self, r, r_cam, Tep):
 
         if not self.plan_success:
-            raise NotImplementedError("todo")
+            # raise NotImplementedError("todo")
+            self.failed = True
+            return True, [0]*10, [0]*5
 
         step = self.plan.joint_trajectory.points[self.index]
         qd = step.velocities
@@ -332,4 +419,20 @@ class MoveIt(BaseController):
         self.prev_timestep = time_from_start - self.curr_time
         self.curr_time = time_from_start
 
-        return arrived, qd, [0, 0]
+
+
+        # Simple camera PID
+        wTc = r_cam.fkine(r_cam.q, fast=True)
+        cTep = np.linalg.inv(wTc) @ Tep
+
+        # Spatial error
+        head_rotation, head_angle, _ = BaseController.transform_between_vectors(np.array([1, 0, 0]), cTep[:3, 3])
+
+        yaw = max(min(head_rotation.rpy()[2] * 10, r_cam.qdlim[3]), -r_cam.qdlim[3])
+        pitch = max(min(head_rotation.rpy()[1] * 10, r_cam.qdlim[4]), -r_cam.qdlim[4])
+
+
+
+        print("qd", qd)
+
+        return arrived, (0, 0) + qd, [0,0, qd[0], yaw, pitch]  

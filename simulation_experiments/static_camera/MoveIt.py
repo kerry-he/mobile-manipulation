@@ -17,7 +17,7 @@ import timeit
 import spatialmath as sm
 from baseController import BaseController
 
-CONSIDER_COLLISIONS = True
+CONSIDER_COLLISIONS = False
 
 
 class kerry_moveit(BaseController):
@@ -54,23 +54,31 @@ class kerry_moveit(BaseController):
         time.sleep(3)
 
         self.move_joint_angle(panda.qr)
+        self.prev_timestep = 0.025
+
 
         if CONSIDER_COLLISIONS:
             for (index, i) in enumerate(spheres[:-1]):
                 # print(i._base, camera_pose, i._base[:3, 3])
-                success = self.add_vision_ray(
-                    camera_pose=camera_pose,
-                    object_pose=i._base[:3, 3],
-                    offset=0,
-                    index=index)
+                (success, _) = self.add_vision_ray(
+                    camera_pose = camera_pose, 
+                    object_pose = i._base[:3, 3], 
+                    offset_percentage = 0,
+                    index = index)        
 
+       
         for offset in np.linspace(0, 1, num=10):
             if CONSIDER_COLLISIONS:
-                success = self.add_vision_ray(
-                    camera_pose=camera_pose,
-                    object_pose=spheres[-1]._base[:3, 3],
-                    offset_percentage=offset,
-                    index=len(spheres) - 1)
+                
+                (success, legnth_positive) = self.add_vision_ray(
+                    camera_pose = camera_pose, 
+                    object_pose = spheres[-1]._base[:3, 3], 
+                    offset_percentage = offset,
+                    index = len(spheres) - 1)            
+                if not legnth_positive:
+                    return False  
+                  
+            self.move_joint_angle(panda.qr)
 
             position = Tep.A[:3, 3]
 
@@ -81,7 +89,7 @@ class kerry_moveit(BaseController):
 
             if success:
                 return True
-            else:
+            elif CONSIDER_COLLISIONS:
                 self.remove_vision_ray(len(spheres) - 1)
 
         return False
@@ -110,6 +118,7 @@ class kerry_moveit(BaseController):
         self.curr_time = time_from_start
 
         return qd, arrived, occluded
+
 
     def display_trajectory(self, traj):
         display_trajectory = moveit_msgs.msg.DisplayTrajectory()
@@ -210,9 +219,11 @@ class kerry_moveit(BaseController):
         p.pose.orientation.z = orientation[2]
         p.pose.orientation.w = orientation[3]
 
-        self.scene.add_cylinder(self.generate_cylinder_name(
-            index), p, length - offset_distance, 0.05)
-        return self.check_object(cylinder_exists=True, name=self.generate_cylinder_name(index))
+        if length - offset_distance > 0:
+            self.scene.add_cylinder(self.generate_cylinder_name(index), p, length - offset_distance, 0.01)
+            return (self.check_object(cylinder_exists=True, name = self.generate_cylinder_name(index)), True)
+        else:
+            return (False, False)
 
     def check_object(self, cylinder_exists, name, timeout=4):
         cylinder_name = name
@@ -237,11 +248,10 @@ class kerry_moveit(BaseController):
         return f"{self.cylinder_name}_{index}"
 
     def cleanup(self, NUM_OBJECTS):
-
-        for i in range(NUM_OBJECTS):
-            self.scene.remove_world_object(self.generate_cylinder_name(i))
-            self.check_object(cylinder_exists=False,
-                              name=self.generate_cylinder_name(i))
+        if CONSIDER_COLLISIONS:
+            for i in range(NUM_OBJECTS):
+                self.scene.remove_world_object(self.generate_cylinder_name(i))
+                self.check_object(cylinder_exists=False, name = self.generate_cylinder_name(i))
 
         self.index = 0
 
