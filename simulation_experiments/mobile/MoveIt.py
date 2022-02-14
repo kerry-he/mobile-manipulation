@@ -26,6 +26,8 @@ import tf
 from moveit_msgs.msg import VisibilityConstraint, Constraints
 from geometry_msgs.msg import PoseStamped
 from moveit_msgs.msg import AttachedCollisionObject
+
+
 CONSIDER_COLLISIONS = True
 
 
@@ -91,23 +93,28 @@ class MoveIt(BaseController):
 
         # The go command can be called with joint values, poses, or without any
         # parameters if you have already set the pose or joint target for the group
-        joint_goal = self.commander.get_current_joint_values()
+        joint_goal = self.arm_commander.get_current_joint_values()
+        
+        # print("joint_goal", joint_goal)
+
+
         joint_goal[:] = angles[2:]
+
         
         
         # joint_goal[0] = angles[1]
-        print(len(angles), joint_goal, len(joint_goal))
-        self.commander.go(joint_goal, wait=True)
+        # print(len(angles), joint_goal, len(joint_goal))
+        self.arm_commander.go(joint_goal, wait=True)
 
         # Calling ``stop()`` ensures that there is no residual movement
-        self.commander.stop()
+        self.arm_commander.stop()
 
     def step(self, r, r_cam, Tep, centroid_sight):
         if not self.separate_arrived:
             self.separate_arrived, qd, camera_qd = self.step_separate_base(
                 r, r_cam, Tep)
 
-            if self.seperate_arrived:
+            if self.separate_arrived:
                 self.plan_success = self.plan_arm(
                     r, r_cam, Tep, centroid_sight)
 
@@ -117,19 +124,43 @@ class MoveIt(BaseController):
 
     def generateValidArmConfig(self):
         while True:
+            #   - l_wheel_joint
+            #   - r_wheel_joint
+            #   - torso_lift_joint
+            #   - bellows_joint
+            #   - head_pan_joint
+            #   - head_tilt_joint
+            #   - shoulder_pan_joint
+            #   - shoulder_lift_joint
+            #   - upperarm_roll_joint
+            #   - elbow_flex_joint
+            #   - forearm_roll_joint
+            #   - wrist_flex_joint
+            #   - wrist_roll_joint
+            #   - l_gripper_finger_joint
+            #   - r_gripper_finger_joint
+            # original joint generation code
+            q = np.random.uniform(low=[0, 0, 0, 0, 0, 0, -1.6056, -1.221, 0, -2.251, 0, -2.160, 0, 0.35, 0.35],
+                                  high=[0, 0, 0, 0, 0, 0, 1.6056, 1.518, 6.283,
+                                  2.251, 6.283, 2.160, 6.283, 0.35, 0.35],
+                                  size=15)
 
-            q = np.random.uniform(low=[0, 0, 0, -1.6056, -1.221, 0, -2.251, 0, -2.160, 0],
-                                  high=[0, 0, 0, 1.6056, 1.518, 6.283,
-                                  2.251, 6.283, 2.160, 6.283],
-                                  size=10
-                                  )
+
             req = GetStateValidityRequest()
             req.group_name = self.group_name
-            req.robot_state = self.moveit_commander.get_current_state()
-            req.robot_state.joint_state = list(q)
+            req.robot_state = self.arm_commander.get_current_state()
+            # print(req.robot_state.joint_state)
+            # input()
+            req.robot_state.joint_state.position = list(q)
+            # print(req)
             res = self.state_valid_service(req)
+
             if res.valid:
-                return q
+                # TODO get subset of joints
+                return q[3:13]
+            else:
+                print("INVALID JOINT STATE")
+
     def getCameraPosition(self):
         self.listener.waitForTransform("/base_link", "/head_camera_rgb_frame", rospy.Time(), rospy.Duration(4.0))
         (trans,rot) = self.listener.lookupTransform('/base_link', '/head_camera_rgb_frame', rospy.Time(0))
@@ -156,8 +187,6 @@ class MoveIt(BaseController):
 
     def plan_arm(self, r, r_cam, Tep, centroid_sight):
 
-    def plan_arm(self, r, r_cam, Tep, centroid_sight):
-
         # wTc = r_cam.fkine(r_cam.q, fast=True)
         wTb = r._base.A
         bTw = np.linalg.inv(wTb)
@@ -165,7 +194,7 @@ class MoveIt(BaseController):
 
         bTo = bTw @ Tep
         bTc = self.getCameraPosition()
-        print(Tep)
+        # print(Tep)
         # print(wTc)
         # input()
         for offset in np.linspace(0, 1, num=10):
@@ -175,7 +204,6 @@ class MoveIt(BaseController):
                     object_pose = bTo[:3, 3],
                     offset_percentage = offset,
                     index = 0)            
-            # input("help")
 
 
             position = bTo[:3, 3]
@@ -197,7 +225,7 @@ class MoveIt(BaseController):
         '''
 
         p = geometry_msgs.msg.PoseStamped()
-        p.header.frame_id = self.commander.get_planning_frame()
+        p.header.frame_id = self.arm_commander.get_planning_frame()
 
         center = (object_pose + camera_pose)/2
         length = np.linalg.norm(object_pose - camera_pose)
@@ -211,7 +239,7 @@ class MoveIt(BaseController):
         angle_axis = sm.SE3.AngleAxis(angle, axis)
         orientation = R.from_matrix(angle_axis.A[0:3, 0:3]).as_quat()
 
-        center = center + cylinder_orientation_vector_z * 0.01
+        center = center + cylinder_orientation_vector_z * 0.03
         
         p.pose.position.x = center[0] + center_offset[0]
         p.pose.position.y = center[1] + center_offset[1]
@@ -269,8 +297,8 @@ class MoveIt(BaseController):
         # Spatial error
         bt = np.sum(np.abs(bTbp[:2, -1]))
 
-        vb_lin = (np.linalg.norm(bTbp[:2, -1]) - 0.69) * 5
-        vb_ang = np.arctan2(bTbp[1, -1], bTbp[0, -1]) * 50 * min(1.0, vb_lin/8.0)
+        vb_lin = (np.linalg.norm(bTbp[:2, -1]) - 0.59) * 5
+        vb_ang = np.arctan2(bTbp[1, -1], bTbp[0, -1]) * 35 * min(1.0, vb_lin/8.0)
 
         vb_lin = max(min(vb_lin, r_cam.qdlim[1]), -r_cam.qdlim[1])
         vb_ang = max(min(vb_ang, r_cam.qdlim[0]), -r_cam.qdlim[0])  
@@ -280,15 +308,15 @@ class MoveIt(BaseController):
             vb_lin = 0
             self.finished_ang = abs(vb_ang / 50) < 0.01
 
-        if bt < 0.7:
+        if bt < 0.6:
             arrived = True
             vb_lin = 0.0
             vb_ang = 0.0
         else:
             arrived = False
-        print("bt", bt, bt < 1.15)
-        print(vb_lin, vb_ang)
-        print("bTbp[:3, -1]", bTbp[:3, -1])
+        # print("bt", bt, bt < 1.15)
+        # print(vb_lin, vb_ang)
+        # print("bTbp[:3, -1]", bTbp[:3, -1])
 
 
         # Simple camera PID
@@ -342,7 +370,7 @@ class MoveIt(BaseController):
 
     def move_pose(self, pose, quaternion):
 
-        pose_goal = self.commander.get_current_pose().pose
+        pose_goal = self.arm_commander.get_current_pose().pose
 
         pose_goal.position.x = pose[0]
         pose_goal.position.y = pose[1]
@@ -358,23 +386,23 @@ class MoveIt(BaseController):
         stamped.header.frame_id = "base_link"
         stamped.pose = pose_goal
 
-        vc = VisibilityConstraint()
-        vc.target_pose = stamped
-        vc.sensor_pose = self.getCameraPose()
-        vc.cone_sides = 29
-        vc.max_view_angle = 45
-        vc.max_range_angle = 45
-        vc.sensor_view_direction = 2
-        vc.weight = 1.0
+        # vc = VisibilityConstraint()
+        # vc.target_pose = stamped
+        # vc.sensor_pose = self.getCameraPose()
+        # vc.cone_sides = 29
+        # vc.max_view_angle = 45
+        # vc.max_range_angle = 45
+        # vc.sensor_view_direction = 2
+        # vc.weight = 1.0
 
-        # self.marker_pub.publish(vc.get_markers())
+        # # self.marker_pub.publish(vc.get_markers())
 
-        cons = Constraints()
-        cons.visibility_constraints.append(vc)
-        self.commander.set_path_constraints(cons)
+        # cons = Constraints()
+        # cons.visibility_constraints.append(vc)
+        # self.arm_commander.set_path_constraints(cons)
 
-        print(self.commander.get_path_constraints())
-        input()
+        # print(self.arm_commander.get_path_constraints())
+        # input()
 
         # vc.sensor_frame_id
 
@@ -383,16 +411,19 @@ class MoveIt(BaseController):
         # pose_goal.position.x = 0.4
         # pose_goal.position.y = 0.1
         # pose_goal.position.z = 0.4
-        self.commander.set_pose_target(pose_goal)
+        self.arm_commander.set_pose_target(pose_goal)
         start_time = timeit.default_timer()
-        plan = self.commander.plan()
+        plan = self.arm_commander.plan()
 
-        self.commander.clear_path_constraints()
+        # input("help")
+
+
+        self.arm_commander.clear_path_constraints()
         
         end_time = timeit.default_timer()
 
         self.planningTime = end_time - start_time        
-        # self.commander.execute(plan[1])
+        # self.arm_commander.execute(plan[1])
         self.plan = plan[1]
         return plan[0]
 
@@ -433,6 +464,6 @@ class MoveIt(BaseController):
 
 
 
-        print("qd", qd)
+        # print("qd", qd)
 
         return arrived, (0, 0) + qd, [0,0, qd[0], yaw, pitch]  

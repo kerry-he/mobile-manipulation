@@ -12,7 +12,7 @@ import math
 import csv
 from enum import Enum
 
-np.random.seed(1337)
+np.random.seed(876204)
 
 
 class Alg(Enum):
@@ -107,16 +107,17 @@ if __name__ == "__main__":
     controller = Controller()
 
     arm_pose_file = "arm_poses.txt"
+    if not (CURRENT_ALG == Alg.MoveIt and not controller.consider_colls):
+        try:
+            arm_poses = open(arm_pose_file).readlines()
+            arm_poses = [x.split(",") for x in arm_poses]
+            # arm_poses = [float(x) for y in arm_poses for x in y]
+            arm_poses = [list(map(float, x)) for x in arm_poses]
+            if len(arm_poses) != total_runs:
+                raise Exception("arm poses is incorrect length")
 
-    try:
-        arm_poses = open(arm_pose_file).readlines()
-        arm_poses = [x.split(",") for x in arm_poses]
-        arm_poses = [float(x) for y in arm_poses for x in y]
-        if len(arm_poses) != total_runs:
-            raise Exception("arm poses is incorrect length")
-
-    except:
-        raise Exception("You must create arm poses file using non-collison moveit first")
+        except:
+            raise Exception("You must create arm poses file using non-collison moveit first")
 
     for run in range(total_runs):
         ax_goal = sg.Axes(0.1)
@@ -126,6 +127,7 @@ if __name__ == "__main__":
             fetch.q = controller.generateValidArmConfig()
             with open("arm_poses.txt", "a") as ap:
                 ap.write(",".join(map(str, list(fetch.q))))
+                ap.write("\n")
         else:
             fetch.q = np.array(arm_poses[run])
 
@@ -183,27 +185,38 @@ if __name__ == "__main__":
                 arrived = False
                 break
 
-            current_dt = dt if CURRENT_ALG != Alg.MoveIt else controller.prev_timestep
+            if CURRENT_ALG == Alg.MoveIt:
+                if np.linalg.norm(fetch.qd[2:]) > 0.01:
+                    scale_factor = (0.6 / np.linalg.norm(fetch.qd[2:]))
+                    controller.prev_timestep /= scale_factor
+                    fetch.qd[2:] *= scale_factor
+                    fetch_camera.qd[2] *= scale_factor
+                
+            num_steps = round(controller.prev_timestep / dt)
+            
+            for _ in range(num_steps):
 
-            env.step(current_dt)
+                current_dt = dt if CURRENT_ALG != Alg.MoveIt else (controller.prev_timestep/num_steps)
+                
+                env.step(current_dt)
 
-            # Reset bases
-            base_new = fetch.fkine(fetch._q, end=fetch.links[2], fast=True)
-            fetch._base.A[:] = base_new
-            fetch.q[:2] = 0
+                # Reset bases
+                base_new = fetch.fkine(fetch._q, end=fetch.links[2], fast=True)
+                fetch._base.A[:] = base_new
+                fetch.q[:2] = 0
 
-            base_new = fetch_camera.fkine(
-                fetch_camera._q, end=fetch_camera.links[2], fast=True)
-            fetch_camera._base.A[:] = base_new
-            fetch_camera.q[:2] = 0
+                base_new = fetch_camera.fkine(
+                    fetch_camera._q, end=fetch_camera.links[2], fast=True)
+                fetch_camera._base.A[:] = base_new
+                fetch_camera.q[:2] = 0
 
-            total_count += 1
-            seen, fov = obj_in_vision(fetch, fetch_camera, wTep.A)
-            seen_count += seen
-            fov_count += fov
+                total_count += 1
+                seen, fov = obj_in_vision(fetch, fetch_camera, wTep.A)
+                seen_count += seen
+                fov_count += fov
 
-            centroid_sight._base = fetch_camera.fkine(
-                fetch_camera.q, fast=True) @ sight_base.A
+                centroid_sight._base = fetch_camera.fkine(
+                    fetch_camera.q, fast=True) @ sight_base.A
 
             if (total_count * dt) > 50:
                 print("Simulation time out")
