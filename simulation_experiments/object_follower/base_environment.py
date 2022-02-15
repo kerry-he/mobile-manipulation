@@ -17,6 +17,8 @@ import sys
 import timeit
 from enum import Enum
 import copy
+from trajectories import *
+from scipy.stats import special_ortho_group
 
 
 class Alg(Enum):
@@ -41,6 +43,21 @@ collisions = []
 spheres = []
 all_times = []
 
+
+SPEEDS = [10, 20]
+TRAJECTORIES = [
+    ("Circle", []),
+    ("Flower", []),
+    ("DoubleInfinity", []),
+    ("DiagonalDoubleInifinity", []),
+    ("InscribedCircle", []),
+    ("RadiusedRandomWalk", [100, 50.0/140, 10.0/140, 0]),
+    ("RadiusedRandomWalk", [100, 50.0/140, 10.0/140, 1]),
+    ("Rectangle", [200.0, 200.0]),
+    ("Rectangle", [50.0, 200.0]),
+    ("Rectangle", [200.0, 50.0])
+]
+# TRAJECTORIES.reverse()
 
 # Launch the simulator Swift
 env = swift.Swift()
@@ -72,26 +89,13 @@ radius = None
 angular_velocity = 0.005
 
 
-def move_object(ee_position, collisions, spheres):
-    global angle
-    global radius
-
-    if radius is None:
-        radius = np.random.uniform(0.2, 0.3)
-        angle = 0
+def move_object(pos, ee_position, collisions, spheres):
 
     prev_position = spheres[0]._base[:3, 3]
     (x, y, z) = prev_position
     distance = np.linalg.norm(np.subtract([x, y], ee_position[:2]))
 
-    center_x = x - radius * np.sin(angle)
-    center_y = y - radius * np.cos(angle)
-
-    angle += angular_velocity
-    new_x = center_x + radius * np.sin(angle)
-    new_y = center_y + radius * np.cos(angle)
-
-    target_pos = [new_x, new_y, z]
+    target_pos = [pos[0], pos[1], z]
     collisions[0].v[:3] = (target_pos - prev_position) / 0.01
 
     spheres[0]._base[:3, 3] = target_pos
@@ -208,123 +212,153 @@ _manipulability = []
 START_RUN = timeit.default_timer()
 
 
-for i in range(1000):
-    mean_manip = []
-    panda.q = panda.qr
+for i in range(len(SPEEDS) * len(TRAJECTORIES)):
+    for j in range(50):
+        traj_name, args = TRAJECTORIES[int(i / len(SPEEDS))]
+        speed = SPEEDS[i % len(SPEEDS)]
 
-    target = spawn_object(addToEnv=False)
-    env.step()
+        class_ = getattr(sys.modules[__name__], traj_name)
+        if len(args) == 0:
+            shape = class_()
+        else:
+            shape = class_(*args)
 
-    # Set the desired end-effector pose to the location of target
-    current_pose = panda.fkine(panda.q)
-    Tep = copy.deepcopy(current_pose)
-    Tep.A[:3, 3] = target.base.t
-    Tep.A[2, 3] = 0.6
-    # Tep.A[2, 3] += 0.1
+        traj = interpolate_trajectory(shape.generate(), max_distance=speed*dt)
+        traj = scale_trajectory(traj, np.random.uniform(
+            0.1, 0.5), np.random.uniform(0.1, 0.5))
+        random_matrix = np.eye(3)
+        random_matrix[:2, :2] = special_ortho_group.rvs(2)
 
-    gripper_x_desired = target.base.t - current_pose.A[:3, 3]
-    gripper_x_desired = gripper_x_desired / np.linalg.norm(gripper_x_desired)
-    gripper_y_desired = np.cross(gripper_x_desired, [0, 0, 1])
-    gripper_z_desired = [0, 0, -1]
+        random_x = np.random.uniform(
+            0.1, 0.3) * (-1 if np.random.uniform() > 0.5 else 1)
+        random_y = np.random.uniform(
+            0.1, 0.3) * (-1 if np.random.uniform() > 0.5 else 1)
 
-    gripper_x_desired = np.cross(gripper_y_desired, gripper_z_desired)
+        random_matrix[:2, 2] = [
+            random_x, random_y]
+        traj = transform_trajectory(traj, random_matrix)
+        shear_matrix = np.eye(3)
+        shear_matrix[0, 1] = np.random.uniform(-0.5, 0.5)
+        shear_matrix[1, 0] = np.random.uniform(-0.5, 0.5)
+        traj = transform_trajectory(traj, shear_matrix)
 
-    if CURRENT_ALG != Alg.Ours:
-        Tep.A[:3, 0] = gripper_x_desired
-        Tep.A[:3, 1] = gripper_y_desired
-        Tep.A[:3, 2] = gripper_z_desired
+        mean_manip = []
+        panda.q = panda.qr
 
-    planned = controller.init(spheres, camera_pos, panda, Tep)
+        target = spawn_object(addToEnv=False)
+        env.step()
 
-    if not planned:
-        _total += [-1]
-        _totalSeen += [-1]
-        _time += [-1]
-        continue
+        # Set the desired end-effector pose to the location of target
+        current_pose = panda.fkine(panda.q)
+        Tep = copy.deepcopy(current_pose)
+        Tep.A[:3, 3] = target.base.t
+        Tep.A[2, 3] = 0.6
+        # Tep.A[2, 3] += 0.1
 
-    total_seen = 0
-    total = 0
-    env.step()
+        gripper_x_desired = target.base.t - current_pose.A[:3, 3]
+        gripper_x_desired = gripper_x_desired / \
+            np.linalg.norm(gripper_x_desired)
+        gripper_y_desired = np.cross(gripper_x_desired, [0, 0, 1])
+        gripper_z_desired = [0, 0, -1]
 
-    time = 0
-    arrived = False
-    number_objects_seen = 0
+        gripper_x_desired = np.cross(gripper_y_desired, gripper_z_desired)
 
-    s = timeit.default_timer()
+        if CURRENT_ALG != Alg.Ours:
+            Tep.A[:3, 0] = gripper_x_desired
+            Tep.A[:3, 1] = gripper_y_desired
+            Tep.A[:3, 2] = gripper_z_desired
 
-    time_blocking = [0] * NUM_OBJECTS
+        planned = controller.init(spheres, camera_pos, panda, Tep)
 
-    xy_distances = []
-    angular_velocity = np.random.uniform(0.005, 0.005*2)
+        if not planned:
+            _total += [-1]
+            _totalSeen += [-1]
+            _time += [-1]
+            continue
 
-    while True:
-        try:
+        total_seen = 0
+        total = 0
+        env.step()
 
-            _s = timeit.default_timer()
+        time = 0
+        arrived = False
+        number_objects_seen = 0
 
-            current_pose = panda.fkine(panda.q)
+        s = timeit.default_timer()
 
-            target, distance = move_object(
-                current_pose.A[:3, 3], collisions, spheres)
+        time_blocking = [0] * NUM_OBJECTS
 
-            qd, arrived, occluded = controller.step(
-                panda, Tep, NUM_OBJECTS, n, collisions, camera_pos, target.base.t
-            )                
+        xy_distances = []
+        angular_velocity = np.random.uniform(0.005, 0.005*2)
 
-            Tep.A[:3, 3] = target.base.t
-            Tep.A[2, 3] = 0.6
-            # print("xy distance", distance)
-            xy_distances.append(distance)
-            panda.qd[:n] = qd[:n]
+        for x, y in traj:
+            try:
 
-            current_dt = dt if CURRENT_ALG != Alg.MoveIt else controller.prev_timestep
-            collisions[0].v[:3] = 0
-            env.step(current_dt)
+                _s = timeit.default_timer()
 
-            _e = timeit.default_timer()
+                current_pose = panda.fkine(panda.q)
 
-            total_seen += NUM_OBJECTS - sum(occluded)
+                target, distance = move_object(
+                    (x, y), current_pose.A[:3, 3], collisions, spheres)
 
-            total += NUM_OBJECTS
-            time += current_dt
-            time_blocking = np.add(
-                current_dt * np.array(occluded), time_blocking)
-            mean_manip.append(panda.manipulability(panda.q))
+                qd, arrived, occluded = controller.step(
+                    panda, Tep, NUM_OBJECTS, n, collisions, camera_pos, target.base.t
+                )
 
-            if time > 60:
+                Tep.A[:3, 3] = target.base.t
+                Tep.A[2, 3] = 0.6
+                # print("xy distance", distance)
+                xy_distances.append(distance)
+                panda.qd[:n] = qd[:n]
+
+                current_dt = dt if CURRENT_ALG != Alg.MoveIt else controller.prev_timestep
+                collisions[0].v[:3] = 0
+                env.step(current_dt)
+
+                _e = timeit.default_timer()
+
+                total_seen += NUM_OBJECTS - sum(occluded)
+
+                total += NUM_OBJECTS
+                time += current_dt
+                time_blocking = np.add(
+                    current_dt * np.array(occluded), time_blocking)
+                mean_manip.append(panda.manipulability(panda.q))
+
+                if time > 60:
+                    break
+            except Exception as e:
+                print(traceback.format_exc())
                 break
-        except Exception as e:
-            print(traceback.format_exc())
-            break
 
-    controller.cleanup(NUM_OBJECTS)
-    _total += [total]
-    _totalSeen += [total_seen]
-    _time += [time]
-    _manipulability.append(np.average(mean_manip))
+        controller.cleanup(NUM_OBJECTS)
+        _total += [total]
+        _totalSeen += [total_seen]
+        _time += [time]
+        _manipulability.append(np.average(mean_manip))
 
-    print("manipulability", _manipulability[-1])
-    print("xy distance", np.average(xy_distances))
-    print(time, time_blocking)
-    print(f"Completed {i}/1000")
-    # input()
+        print("manipulability", _manipulability[-1])
+        print("xy distance", np.average(xy_distances))
+        print(time, time_blocking)
+        print(f"Completed {100*i+j}/1000")
+        # input()
 
-    FILE = open(f"{CURRENT_ALG}_{NUM_OBJECTS}", "a")
-    if CURRENT_ALG != Alg.MoveIt:
-        FILE.write(
-            f"{_manipulability[-1]}, {time}, {','.join([str(x) for x in time_blocking])}\n"
-        )
-    else:
-        FILE.write(
-            f"{_manipulability[-1]}, {time}, {controller.planningTime}, {','.join([str(x) for x in time_blocking])}\n"
-        )
-        print(
-            f"{_manipulability[-1]}, {time}, {controller.planningTime}, {','.join([str(x) for x in time_blocking])}\n"
-        )
-    FILE.close()
+        FILE = open(f"{CURRENT_ALG}_{NUM_OBJECTS}", "a")
+        if CURRENT_ALG != Alg.MoveIt:
+            FILE.write(
+                f"{_manipulability[-1]}, {time}, {','.join([str(x) for x in time_blocking])}\n"
+            )
+        else:
+            FILE.write(
+                f"{_manipulability[-1]}, {time}, {controller.planningTime}, {','.join([str(x) for x in time_blocking])}, {xy_distances}\n"
+            )
+            print(
+                f"{_manipulability[-1]}, {time}, {controller.planningTime}, {','.join([str(x) for x in time_blocking])}, {xy_distances} \n"
+            )
+        FILE.close()
 
-    success += arrived
-    panda.qd = [0] * n
+        success += arrived
+        panda.qd = [0] * n
 
 
 vision = np.divide(_totalSeen, _total)
