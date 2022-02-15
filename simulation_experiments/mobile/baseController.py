@@ -4,7 +4,7 @@
 
 import numpy as np
 import spatialmath as sm
-from typing import Tuple, list
+from typing import Tuple, List
 
 
 class BaseController():
@@ -15,7 +15,7 @@ class BaseController():
     def init(self, init_joint_angles, init_head_angle):
         pass
 
-    def step_robot(self, r, r_cam, Tep, line_of_sight) -> Tuple[bool, list[float], list[float]]:
+    def step_robot(self, r, r_cam, Tep, line_of_sight) -> Tuple[bool, List[float], List[float]]:
         pass
 
     @staticmethod

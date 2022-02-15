@@ -12,7 +12,7 @@ import math
 import csv
 from enum import Enum
 
-np.random.seed(1337)
+np.random.seed(876204)
 
 
 class Alg(Enum):
@@ -22,8 +22,7 @@ class Alg(Enum):
     Holistic = 4
     MoveIt = 5
 
-
-CURRENT_ALG = Alg.Holistic
+CURRENT_ALG = Alg.MoveIt
 
 
 if CURRENT_ALG == Alg.Proposed:
@@ -98,7 +97,7 @@ def obj_in_vision(r, r_cam, Tep):
 if __name__ == "__main__":
 
     env = swift.Swift()
-    env.launch(realtime=False, headless=True)
+    env.launch(realtime=True, headless=False)
     # env.launch(realtime=True)
 
     total_runs = 1000
@@ -108,16 +107,17 @@ if __name__ == "__main__":
     controller = Controller()
 
     arm_pose_file = "arm_poses.txt"
+    if not (CURRENT_ALG == Alg.MoveIt and not controller.consider_colls):
+        try:
+            arm_poses = open(arm_pose_file).readlines()
+            arm_poses = [x.split(",") for x in arm_poses]
+            # arm_poses = [float(x) for y in arm_poses for x in y]
+            arm_poses = [list(map(float, x)) for x in arm_poses]
+            if len(arm_poses) != total_runs:
+                raise Exception("arm poses is incorrect length")
 
-    try:
-        arm_poses = open(arm_pose_file).readlines()
-        arm_poses = [x.split(",") for x in arm_poses]
-        arm_poses = [float(x) for y in arm_poses for x in y]
-        if len(arm_poses) != total_runs:
-            raise Exception("arm poses is incorrect length")
-
-    except:
-        raise Exception("You must create arm poses file using non-collison moveit first")
+        except:
+            raise Exception("You must create arm poses file using non-collison moveit first")
 
     for run in range(total_runs):
         ax_goal = sg.Axes(0.1)
@@ -127,13 +127,14 @@ if __name__ == "__main__":
             fetch.q = controller.generateValidArmConfig()
             with open("arm_poses.txt", "a") as ap:
                 ap.write(",".join(map(str, list(fetch.q))))
+                ap.write("\n")
         else:
             fetch.q = np.array(arm_poses[run])
 
         fetch_camera = rtb.models.FetchCamera()
         fetch_camera.q = fetch_camera.qr
 
-        Controller.init(fetch.q, fetch_camera.qr)
+        controller.init(fetch.q, fetch_camera.qr)
 
         sight_base = sm.SE3.Ry(np.pi/2) * sm.SE3(0.0, 0.0, 2.5)
         centroid_sight = sg.Cylinder(radius=0.001,
@@ -176,32 +177,46 @@ if __name__ == "__main__":
         while not arrived:
 
             try:
-                arrived, fetch.qd, fetch_camera.qd = controller.step(
-                    fetch, fetch_camera, wTep.A)
+                arrived, fetch.qd, fetch_camera.qd = controller.step(fetch, fetch_camera, wTep.A, centroid_sight)
             except Exception as e:
                 print(e)
 
-            current_dt = dt if CURRENT_ALG != Alg.MoveIt else controller.prev_timestep
+            if CURRENT_ALG == Alg.MoveIt and controller.failed:
+                arrived = False
+                break
 
-            env.step(current_dt)
+            if CURRENT_ALG == Alg.MoveIt:
+                if np.linalg.norm(fetch.qd[2:]) > 0.01:
+                    scale_factor = (0.6 / np.linalg.norm(fetch.qd[2:]))
+                    controller.prev_timestep /= scale_factor
+                    fetch.qd[2:] *= scale_factor
+                    fetch_camera.qd[2] *= scale_factor
+                
+            num_steps = round(controller.prev_timestep / dt)
+            
+            for _ in range(num_steps):
 
-            # Reset bases
-            base_new = fetch.fkine(fetch._q, end=fetch.links[2], fast=True)
-            fetch._base.A[:] = base_new
-            fetch.q[:2] = 0
+                current_dt = dt if CURRENT_ALG != Alg.MoveIt else (controller.prev_timestep/num_steps)
+                
+                env.step(current_dt)
 
-            base_new = fetch_camera.fkine(
-                fetch_camera._q, end=fetch_camera.links[2], fast=True)
-            fetch_camera._base.A[:] = base_new
-            fetch_camera.q[:2] = 0
+                # Reset bases
+                base_new = fetch.fkine(fetch._q, end=fetch.links[2], fast=True)
+                fetch._base.A[:] = base_new
+                fetch.q[:2] = 0
 
-            total_count += 1
-            seen, fov = obj_in_vision(fetch, fetch_camera, wTep.A)
-            seen_count += seen
-            fov_count += fov
+                base_new = fetch_camera.fkine(
+                    fetch_camera._q, end=fetch_camera.links[2], fast=True)
+                fetch_camera._base.A[:] = base_new
+                fetch_camera.q[:2] = 0
 
-            centroid_sight._base = fetch_camera.fkine(
-                fetch_camera.q, fast=True) @ sight_base.A
+                total_count += 1
+                seen, fov = obj_in_vision(fetch, fetch_camera, wTep.A)
+                seen_count += seen
+                fov_count += fov
+
+                centroid_sight._base = fetch_camera.fkine(
+                    fetch_camera.q, fast=True) @ sight_base.A
 
             if (total_count * dt) > 50:
                 print("Simulation time out")

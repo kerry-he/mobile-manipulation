@@ -169,6 +169,9 @@ _manipulability = []
 
 START_RUN = timeit.default_timer()
 
+average_total_v = 0
+average_count = 0
+
 
 for i in range(1000):
     mean_manip = []
@@ -211,6 +214,9 @@ for i in range(1000):
     arrived = False
     number_objects_seen = 0
 
+    count = 0
+    total_v = 0
+
     s = timeit.default_timer()
 
     time_blocking = [0] * NUM_OBJECTS
@@ -225,24 +231,39 @@ for i in range(1000):
 
             panda.qd[:n] = qd[:n]
 
-            current_dt = dt if CURRENT_ALG != Alg.MoveIt else controller.prev_timestep
-            env.step(current_dt)
+            num_steps = round(controller.prev_timestep / dt)
+            
+            for _ in range(num_steps):
 
-            _e = timeit.default_timer()
+                current_dt = dt if CURRENT_ALG != Alg.MoveIt else (controller.prev_timestep/num_steps)
 
-            total_seen += NUM_OBJECTS - sum(occluded)
+                total_v += np.linalg.norm((panda.jacob0(panda.q) @ panda.qd)[:3])
+                count += 1
 
-            total += NUM_OBJECTS
-            time += current_dt
-            time_blocking = np.add(
-                current_dt * np.array(occluded), time_blocking)
-            mean_manip.append(panda.manipulability(panda.q))
+                env.step(current_dt)
+                # print(current_dt)
+                _e = timeit.default_timer()
 
-            if time > 60:
-                break
+                total_seen += NUM_OBJECTS - sum(occluded)
+
+                total += NUM_OBJECTS
+                time += current_dt
+                time_blocking = np.add(current_dt * np.array(occluded), time_blocking)
+                mean_manip.append(panda.manipulability(panda.q))
+
+                if time > 60:
+                    break
+
         except Exception as e:
             print(traceback.format_exc())
             break
+
+    print("Average task space m/s: ", total_v / max(1.0, count))
+
+    average_total_v += total_v / max(1.0, count)
+    average_count += 1
+
+    print("Running average task space m/s: ", average_total_v / average_count)
 
     controller.cleanup(NUM_OBJECTS)
     _total += [total]
