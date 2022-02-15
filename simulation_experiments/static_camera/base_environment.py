@@ -27,14 +27,12 @@ class Alg(Enum):
     MoveIt = 5
 
 
-CURRENT_ALG = Alg.MoveIt
+CURRENT_ALG = Alg.NEO
 
 if CURRENT_ALG == Alg.Ours:
     from ours import Ours as Controller
 elif CURRENT_ALG == Alg.NEO:
     from neo_original import NEO as Controller
-elif CURRENT_ALG == Alg.Slack:
-    from slack import Slack as Controller
 elif CURRENT_ALG == Alg.PBVS:
     from PBVS import PBVS as Controller
 elif CURRENT_ALG == Alg.MoveIt:
