@@ -192,7 +192,7 @@ if __name__ == "__main__":
                     fetch.qd[2:] *= scale_factor
                     fetch_camera.qd[2] *= scale_factor
                 
-            num_steps = round(controller.prev_timestep / dt)
+            num_steps = 1 if CURRENT_ALG != Alg.MoveIt else round(controller.prev_timestep / dt)
             
             for _ in range(num_steps):
 

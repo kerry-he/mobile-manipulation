@@ -12,7 +12,7 @@ import qpsolvers as qp
 
 
 class Holistic(BaseController):
-    def step(r, r_cam, Tep, centroid_sight):
+    def step(self, r, r_cam, Tep, centroid_sight):
 
         wTe = r.fkine(r.q, fast=True)
         wTc = r_cam.fkine(r_cam.q, fast=True)
@@ -32,16 +32,13 @@ class Holistic(BaseController):
         # Quadratic component of objective function
         Q = np.eye(r.n + 2 + 9)
 
-        # Robotic manipulator
-        Q[: r.n, : r.n] *= Y
-        # Mobile base
-        Q[:2, :2] *= 1.0 / et
+        
+        Q[: r.n, : r.n] *= Y            # Robotic manipulator
+        Q[:2, :2] *= 1.0 / et           # Mobile base
         Q[r.n: r.n + 2, r.n: r.n + 2] *= Y                        # Camera
-        # Slack manipulator
-        Q[r.n + 2: -6, r.n + 2: -6] = (1.0 / et) * np.eye(3)
-        # Slack manipulator
-        Q[r.n + 5: -3, r.n + 5: -3] = (1.0 / np.power(et, 5)) * np.eye(3)
-        Q[-7, -7] *= 1000
+        Q[r.n + 2: -6, r.n + 2: -6] = (1000.0 / np.power(et, 2)) * np.eye(3)        # Slack manipulator
+        Q[r.n + 5: -3, r.n + 5: -3] = (Y / np.power(et, 5)) * np.eye(3)   # Slack manipulator
+        # Q[-7, -7] = 1000
         Q[-3:, -3:] = 100 * np.eye(3)                      # Slack camera
 
         v_manip, _ = rtb.p_servo(wTe, Tep, 1.5)

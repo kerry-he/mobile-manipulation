@@ -13,7 +13,7 @@ import qpsolvers as qp
 
 
 class PCamera(BaseController):
-    def step(r, r_cam, Tep, centroid_sight):
+    def step(self, r, r_cam, Tep, centroid_sight):
 
         wTe = r.fkine(r.q, fast=True)
 
@@ -31,7 +31,9 @@ class PCamera(BaseController):
         # Joint velocity component of Q
         Q[: r.n, : r.n] *= Y
         Q[:2, :2] *= 1.0 / et
-        Q[-4, -4] *= 1000
+        # Q[-4, -4] *= 1000
+        Q[-6: -3, -6: -3] = (1000.0 / np.power(et, 2)) * np.eye(3)        # Slack manipulator
+        Q[-3:, -3:] = (Y / np.power(et, 5)) * np.eye(3)   # Slack manipulator        
 
         # Slack component of Q
         Q[r.n:, r.n:] = (1.0 / et) * np.eye(6)
