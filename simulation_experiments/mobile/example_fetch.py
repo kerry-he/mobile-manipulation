@@ -8,6 +8,8 @@ import math
 
 
 def transform_between_vectors(a, b):
+    # Finds the shortest rotation between two vectors using angle-axis,
+    # then outputs it as a 4x4 transformation matrix
     a = a / np.linalg.norm(a)
     b = b / np.linalg.norm(b)
 
@@ -15,7 +17,6 @@ def transform_between_vectors(a, b):
     axis = np.cross(a, b)
 
     return sm.SE3.AngleAxis(angle, axis), angle, axis
-
 
 # Launch the simulator Swift
 env = swift.Swift()
@@ -30,9 +31,9 @@ fetch.q = fetch.qr
 fetch_camera.q = fetch_camera.qr
 
 # Make target object obstacles with velocities
-target = sg.Sphere(radius=0.05, base=sm.SE3(0.52, 0.4, 0.3))
+target = sg.Sphere(radius=0.05, base=sm.SE3(-2.0, 0.0, 0.5))
 
-# Make line of sight object, modeled as cylinder
+# Make line of sight object to visualize where the camera is looking
 sight_base = sm.SE3.Ry(np.pi / 2) * sm.SE3(0.0, 0.0, 2.5)
 centroid_sight = sg.Cylinder(
     radius=0.001,
@@ -40,8 +41,7 @@ centroid_sight = sg.Cylinder(
     base=fetch_camera.fkine(fetch_camera.q, fast=True) @ sight_base.A,
 )
 
-
-# Add the Panda and shapes to the simulator
+# Add the Fetch and other shapes to the simulator
 env.add(fetch)
 env.add(fetch_camera)
 env.add(centroid_sight)
@@ -49,9 +49,17 @@ env.add(target)
 
 # Set the desired end-effector pose to the location of target
 Tep = fetch.fkine(fetch.q)
+Tep.A[:3, :3] = sm.SE3.Rz(np.pi).R
 Tep.A[:3, 3] = target.base.t
 
 env.step()
+
+
+
+n_base = 2
+n_arm = 8
+n_camera = 2
+n = n_base + n_arm + n_camera
 
 
 def step():
@@ -66,60 +74,58 @@ def step():
     # Find transform between camera and goal
     cTep = np.linalg.inv(wTc) @ Tep.A
 
-    # Spatial error
+    # Spatial error between end-effector and target
     et = np.sum(np.abs(eTep[:3, -1]))
 
-    head_rotation, head_angle, _ = transform_between_vectors(
-        np.array([1, 0, 0]), cTep[:3, 3]
-    )
-
-    # Gain term (lambda) for control minimisation
-    Y = 0.01
+    # Weighting function used for objective function
+    def w_lambda(et, alpha, gamma):
+        return alpha * np.power(et, gamma)
 
     # Quadratic component of objective function
-    Q = np.eye(fetch.n + 2 + 10)
+    Q = np.eye(n + 10)
 
-    Q[: fetch.n, : fetch.n] *= Y  # Robotic manipulator
-    Q[:2, :2] *= 1.0 / et  # Mobile base
-    Q[fetch.n : fetch.n + 2, fetch.n : fetch.n + 2] *= Y  # Camera
-    Q[fetch.n + 2 : -7, fetch.n + 2 : -7] = (1000.0 / np.power(et, 2)) * np.eye(
-        3
-    )  # Slack manipulator
-    Q[fetch.n + 5 : -4, fetch.n + 5 : -4] = (Y / np.power(et, 5)) * np.eye(
-        3
-    )  # Slack manipulator
-    Q[-4:-1, -4:-1] = 100 * np.eye(3)  # Slack camera
-    Q[-1, -1] = 1000.0 * np.power(et, 3)
+    Q[: n_base + n_arm, : n_base + n_arm]       *= 0.01                         # Robotic manipulator
+    Q[:n_base, :n_base]                         *= w_lambda(et, 1.0, -1.0)      # Mobile base
+    Q[n_base + n_arm : n, n_base + n_arm : n]   *= 0.01                         # Camera
+    Q[n : n + 3, n : n + 3]                     *= w_lambda(et, 1000.0, -2.0)   # Slack arm linear
+    Q[n + 3 : n + 6, n + 3 : n + 6]             *= w_lambda(et, 0.01, -5.0)     # Slack arm angular
+    Q[n + 6:-1, n + 6:-1]                       *= 100                          # Slack camera
+    Q[-1, -1]                                   *= w_lambda(et, 1000.0, 3.0)    # Slack self-occlusion
 
+    # Calculate target velocities for end-effector to reach target
     v_manip, _ = rtb.p_servo(wTe, Tep, 1.5)
     v_manip[3:] *= 1.3
 
-    v_camera, _ = rtb.p_servo(sm.SE3(), head_rotation, 20)
-    v_camera *= 1.3
+    # Calculate target angular velocity for camera to rotate towards target
+    head_rotation, _, _ = transform_between_vectors(
+        np.array([1, 0, 0]), cTep[:3, 3]
+    )
+    v_camera, _ = rtb.p_servo(sm.SE3(), head_rotation, 25)
 
-    # The equality contraints
+    # The equality contraints to achieve velocity targets
     Aeq = np.c_[
-        fetch.jacobe(fetch.q, fast=True), np.zeros((6, 2)), np.eye(6), np.zeros((6, 4))
+        fetch.jacobe(fetch.q, fast=True), 
+        np.zeros((6, 2)), 
+        np.eye(6), 
+        np.zeros((6, 4))
     ]
     beq = v_manip.reshape((6,))
 
     jacobe_cam = fetch_camera.jacobe(fetch_camera.q, fast=True)[3:, :]
-    Aeq = np.r_[
-        Aeq,
-        np.c_[
-            jacobe_cam[:, :3],
-            np.zeros((3, 7)),
-            jacobe_cam[:, 3:],
-            np.zeros((3, 6)),
-            np.eye(3),
-            np.zeros((3, 1)),
-        ],
+    Aeq_cam = np.c_[
+        jacobe_cam[:, :3],
+        np.zeros((3, 7)),
+        jacobe_cam[:, 3:],
+        np.zeros((3, 6)),
+        np.eye(3),
+        np.zeros((3, 1)),
     ]
+    Aeq = np.r_[Aeq, Aeq_cam]
     beq = np.r_[beq, v_camera[3:].reshape((3,))]
 
     # The inequality constraints for joint limit avoidance
-    Ain = np.zeros((fetch.n + 2 + 10, fetch.n + 2 + 10))
-    bin = np.zeros(fetch.n + 2 + 10)
+    Ain = np.zeros((n + 10, n + 10))
+    bin = np.zeros(n + 10)
 
     # The minimum angle (in radians) in which the joint is allowed to approach
     # to its limit
@@ -139,10 +145,10 @@ def step():
     bin[2] = bin_torso[2]
 
     Ain_cam, bin_cam = fetch_camera.joint_velocity_damper(ps, pi, fetch_camera.n)
-    Ain[fetch.n : fetch.n + 2, fetch.n : fetch.n + 2] = Ain_cam[3:, 3:]
-    bin[fetch.n : fetch.n + 2] = bin_cam[3:]
+    Ain[n_base + n_arm : n, n_base + n_arm : n] = Ain_cam[3:, 3:]
+    bin[n_base + n_arm : n] = bin_cam[3:]
 
-    # Draw line of sight between camera and object
+    # Create line of sight object between camera and object
     camera_pos = wTc[:3, 3]
     target_pos = Tep.A[:3, 3]
 
@@ -157,6 +163,7 @@ def step():
         base=(sm.SE3(middle) * R),
     )
 
+    # Calculate 
     c_Ain, c_bin, _ = fetch.vision_collision_damper(
         los,
         fetch.q[: fetch.n],
@@ -175,9 +182,9 @@ def step():
     # Linear component of objective function: the manipulability Jacobian
     c = np.concatenate(
         (
-            np.zeros(2),
-            -fetch.jacobm(start=fetch.links[3]).reshape((fetch.n - 2,)),
-            np.zeros(2),
+            np.zeros(n_base),
+            -fetch.jacobm(start=fetch.links[3]).reshape((n_arm,)),
+            np.zeros(n_camera),
             np.zeros(10),
         )
     )
@@ -218,7 +225,7 @@ def step():
     arrived = et < 0.02
 
     fetch.qd = qd
-    fetch_camera.qd_cam = qd_cam
+    fetch_camera.qd = qd_cam
     centroid_sight._base = fetch_camera.fkine(fetch_camera.q, fast=True) @ sight_base.A
 
     return arrived
