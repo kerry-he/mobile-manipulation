@@ -149,33 +149,20 @@ def step():
     bin[n_base + n_arm : n] = bin_cam[3:]
 
     # Create line of sight object between camera and object
-    camera_pos = wTc[:3, 3]
-    target_pos = Tep.A[:3, 3]
-
-    middle = (camera_pos + target_pos) / 2
-    R, _, _ = transform_between_vectors(
-        np.array([0.0, 0.0, 1.0]), camera_pos - target_pos
-    )
-
-    los = sg.Cylinder(
-        radius=0.001,
-        length=np.linalg.norm(camera_pos - target_pos),
-        base=(sm.SE3(middle) * R),
-    )
-
-    # Calculate 
-    c_Ain, c_bin, _ = fetch.vision_collision_damper(
-        los,
-        fetch.q[: fetch.n],
-        0.3,
-        0.2,
-        1.0,
-        start=fetch.link_dict["shoulder_pan_link"],
-        end=fetch.link_dict["gripper_link"],
+    c_Ain, c_bin, _ = fetch.newest_vision_collision_damper(
+        target,
         camera=fetch_camera,
-    )
+        q=fetch.q[: fetch.n],
+        di=0.3,
+        ds=0.2,
+        xi=1.0,
+        end=fetch.link_dict["gripper_link"],
+        start=fetch.link_dict["shoulder_pan_link"],
+    )    
 
     if c_Ain is not None and c_bin is not None:
+        c_Ain = np.c_[c_Ain, np.zeros((c_Ain.shape[0], 9)), -np.ones((c_Ain.shape[0], 1))]
+
         Ain = np.r_[Ain, c_Ain]
         bin = np.r_[bin, c_bin]
 

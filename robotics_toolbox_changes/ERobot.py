@@ -2132,6 +2132,156 @@ class ERobot(BaseERobot):
 
         return Ain, bin, din
 
+    def newest_vision_collision_damper(
+        self,
+        shape,
+        camera=None,
+        q=None,
+        di=0.3,
+        ds=0.05,
+        xi=1.0,
+        end=None,
+        start=None,
+        collision_list=None
+    ):
+        """
+        Formulates an inequality contraint which, when optimised for will
+        make it impossible for the robot to run into a collision. Requires
+        See examples/neo.py for use case
+        :param ds: The minimum distance in which a joint is allowed to
+            approach the collision object shape
+        :type ds: float
+        :param di: The influence distance in which the velocity
+            damper becomes active
+        :type di: float
+        :param xi: The gain for the velocity damper
+        :type xi: float
+        :param from_link: The first link to consider, defaults to the base
+            link
+        :type from_link: ELink
+        :param to_link: The last link to consider, will consider all links
+            between from_link and to_link in the robot, defaults to the
+            end-effector link
+        :type to_link: ELink
+        :returns: Ain, Bin as the inequality contraints for an omptimisor
+        :rtype: ndarray(6), ndarray(6)
+        """
+
+        if start is None:
+            start = self.base_link
+
+        if end is None:
+            end = self.ee_link
+
+        links, n, _ = self.get_path(start=start, end=end)
+
+        # if q is None:
+        #     q = np.copy(self.q)
+        # else:
+        #     q = getvector(q, n)
+
+        j = 0
+        Ain = None
+        bin = None
+        din = None
+
+        def rotation_between_vectors(a, b):
+            a = a / np.linalg.norm(a)
+            b = b / np.linalg.norm(b)
+
+            angle = np.arccos(np.dot(a, b))
+            axis = np.cross(a, b)
+
+            return SE3.AngleAxis(angle, axis)
+
+
+        if isinstance(camera, ERobot):
+            wTcp = camera.fkine(camera.q, fast=True)[:3, 3]
+        elif isinstance(camera, SE3):
+            wTcp = camera[:3, 3]
+
+        wTtp = shape.base.t
+
+        # Create line of sight object
+        los_mid = SE3((wTcp + wTtp) / 2)
+        los_orientation = rotation_between_vectors(np.array([0., 0., 1.]), wTcp - wTtp)
+
+        los = Cylinder(radius=0.001, 
+                       length=np.linalg.norm(wTcp - wTtp), 
+                       base=(los_mid * los_orientation)
+        )        
+
+        def indiv_calculation(link, link_col, q):
+            d, wTlp, wTvp = link_col.closest_point(los, di)
+        
+            if d is not None:
+                lpTvp = -wTlp + wTvp
+
+                norm = lpTvp / d
+                norm_h = np.expand_dims(np.r_[norm, 0, 0, 0], axis=0)
+
+                tool = SE3((np.linalg.inv(self.fkine(q, end=link, fast=True)) @ SE3(wTlp).A)[:3, 3])
+
+                Je = self.jacob0(
+                    q, end=link, tool=tool.A, fast=True
+                )
+                Je[:3, :] = self._base.A[:3, :3] @ Je[:3, :]
+                n_dim = Je.shape[1]
+                
+
+                if isinstance(camera, ERobot):
+                    Jv = camera.jacob0(camera.q, fast=True)
+                    Jv[:3, :] = self._base.A[:3, :3] @ Jv[:3, :]
+
+                    Jv *= np.linalg.norm(wTvp - shape.base.t) / los.length
+                else:
+                    Jv = np.zeros(6, camera.n)
+
+                dpt = norm_h @ shape.v
+                dpt *= np.linalg.norm(wTvp - wTcp) / los.length
+
+                dpc = norm_h @ Jv
+
+                l_Ain = np.zeros((1, self.n + 2))
+                l_Ain[0, :n_dim] = norm_h @ Je
+                l_Ain -= np.r_[dpc[0, :3], np.zeros(7), dpc[0, 3:]]
+                l_bin = (xi * (d - ds) / (di - ds)) + dpt
+            else:
+                l_Ain = None
+                l_bin = None
+
+            return l_Ain, l_bin, d
+        
+        for link in links:
+            if link.isjoint:
+                j += 1
+
+            if collision_list is None:
+                col_list = link.collision
+            else:
+                col_list = collision_list[j - 1]
+
+            for link_col in col_list:
+                l_Ain, l_bin, d = indiv_calculation(link, link_col, q)
+
+                if l_Ain is not None and l_bin is not None:
+                    if Ain is None:
+                        Ain = l_Ain
+                    else:
+                        Ain = np.r_[Ain, l_Ain]
+
+                    if bin is None:
+                        bin = np.array(l_bin)
+                    else:
+                        bin = np.r_[bin, l_bin]
+
+                    if din is None:
+                        din = d
+                    else:
+                        din = np.r_[din, d]
+
+        return Ain, bin, din
+
     def vision_collision_damper(
         self,
         shape,
