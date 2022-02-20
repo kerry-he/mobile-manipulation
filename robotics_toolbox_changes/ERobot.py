@@ -11,6 +11,7 @@ import webbrowser
 import numpy as np
 from spatialmath import SE3, SE2
 from spatialmath.base.argcheck import getvector, verifymatrix, getmatrix, islistof
+from spatialgeometry import Cylinder
 
 from roboticstoolbox.robot.ELink import ELink, ELink2, BaseELink
 from roboticstoolbox.robot.ETS import ETS, ETS2
@@ -2136,6 +2137,7 @@ class ERobot(BaseERobot):
         self,
         shape,
         camera=None,
+        camera_n=0,
         q=None,
         di=0.3,
         ds=0.05,
@@ -2198,7 +2200,7 @@ class ERobot(BaseERobot):
         if isinstance(camera, ERobot):
             wTcp = camera.fkine(camera.q, fast=True)[:3, 3]
         elif isinstance(camera, SE3):
-            wTcp = camera[:3, 3]
+            wTcp = camera.t
 
         wTtp = shape.base.t
 
@@ -2234,17 +2236,22 @@ class ERobot(BaseERobot):
                     Jv[:3, :] = self._base.A[:3, :3] @ Jv[:3, :]
 
                     Jv *= np.linalg.norm(wTvp - shape.base.t) / los.length
+                    
+                    dpc = norm_h @ Jv
+                    dpc = np.r_[
+                        dpc[0, :-camera_n], 
+                        np.zeros(self.n - (camera.n - camera_n)), 
+                        dpc[0, -camera_n:]
+                    ]
                 else:
-                    Jv = np.zeros(6, camera.n)
+                    dpc = np.zeros((1, self.n + camera_n))
 
                 dpt = norm_h @ shape.v
                 dpt *= np.linalg.norm(wTvp - wTcp) / los.length
 
-                dpc = norm_h @ Jv
-
-                l_Ain = np.zeros((1, self.n + 2))
+                l_Ain = np.zeros((1, self.n + camera_n))
                 l_Ain[0, :n_dim] = norm_h @ Je
-                l_Ain -= np.r_[dpc[0, :3], np.zeros(7), dpc[0, 3:]]
+                l_Ain -= dpc
                 l_bin = (xi * (d - ds) / (di - ds)) + dpt
             else:
                 l_Ain = None
