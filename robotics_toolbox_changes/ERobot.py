@@ -2211,7 +2211,7 @@ class ERobot(BaseERobot):
         los = Cylinder(radius=0.001, 
                        length=np.linalg.norm(wTcp - wTtp), 
                        base=(los_mid * los_orientation)
-        )        
+        )
 
         def indiv_calculation(link, link_col, q):
             d, wTlp, wTvp = link_col.closest_point(los, di)
