@@ -16,7 +16,7 @@ def transform_between_vectors(a, b):
     angle = np.arccos(np.dot(a, b))
     axis = np.cross(a, b)
 
-    return sm.SE3.AngleAxis(angle, axis), angle, axis
+    return sm.SE3.AngleAxis(angle, axis)
 
 # Launch the simulator Swift
 env = swift.Swift()
@@ -97,7 +97,7 @@ def step():
     v_manip[3:] *= 1.3
 
     # Calculate target angular velocity for camera to rotate towards target
-    head_rotation, _, _ = transform_between_vectors(
+    head_rotation = transform_between_vectors(
         np.array([1, 0, 0]), cTep[:3, 3]
     )
     v_camera, _ = rtb.p_servo(sm.SE3(), head_rotation, 25)
@@ -152,6 +152,7 @@ def step():
     c_Ain, c_bin, _ = fetch.newest_vision_collision_damper(
         target,
         camera=fetch_camera,
+        camera_n=2,
         q=fetch.q[: fetch.n],
         di=0.3,
         ds=0.2,
