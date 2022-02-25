@@ -22,7 +22,7 @@ class Alg(Enum):
     Holistic = 4
     MoveIt = 5
 
-CURRENT_ALG = Alg.MoveIt
+CURRENT_ALG = Alg.Proposed
 
 
 if CURRENT_ALG == Alg.Proposed:
@@ -102,7 +102,7 @@ if __name__ == "__main__":
 
     total_runs = 1000
 
-    load_run = 0
+    load_run = 199
 
     controller = Controller()
 
@@ -159,12 +159,12 @@ if __name__ == "__main__":
         if run < load_run:
             continue
 
-        env.set_camera_pose([-2, 3, 0.7], [-2, 0.0, 0.5])
+        env.set_camera_pose([5, -1.75, 0.75], [2, 2.25, 0.0])
         env.add(ax_goal)
         env.add(fetch)
         env.add(fetch_camera)
-        env.add(centroid_sight)
-        env.add(line_of_sight)
+        # env.add(centroid_sight)
+        # env.add(line_of_sight)
 
         ax_goal.base = wTep
 
@@ -173,6 +173,8 @@ if __name__ == "__main__":
         total_count = 0
         seen_count = 0
         fov_count = 0
+
+        idd = None
 
         while not arrived:
 
@@ -199,6 +201,7 @@ if __name__ == "__main__":
                 current_dt = dt if CURRENT_ALG != Alg.MoveIt else (controller.prev_timestep/num_steps)
                 
                 env.step(current_dt)
+                env.screenshot(file_name="sim/pic" + str(total_count))
 
                 # Reset bases
                 base_new = fetch.fkine(fetch._q, end=fetch.links[2], fast=True)
@@ -217,6 +220,55 @@ if __name__ == "__main__":
 
                 centroid_sight._base = fetch_camera.fkine(
                     fetch_camera.q, fast=True) @ sight_base.A
+
+            wTc = fetch_camera.fkine(fetch_camera.q, fast=True)
+            camera_pos = wTc[:3, 3]
+            target_pos = wTep.A[:3, 3]
+            middle = (camera_pos + target_pos) / 2
+            R, _, _ = transform_between_vectors(np.array([0., 0., 1.]), camera_pos - target_pos)
+
+            los = sg.Cylinder(radius=0.01, 
+                length=np.linalg.norm(camera_pos - target_pos), 
+                base=(sm.SE3(middle) * R)
+            )
+
+            _, _, c_din, mindist = fetch.new_vision_collision_damper(
+                los,
+                fetch.q[:fetch.n],
+                0.3,
+                0.2,
+                1.0,
+                start=fetch.link_dict["shoulder_pan_link"],
+                end=fetch.link_dict["gripper_link"],
+                camera=fetch_camera,
+                obj=wTep.A[:3, 3]
+            )
+
+            if mindist is not None:
+                wTc = fetch_camera.fkine(fetch_camera.q, fast=True)
+                camera_pos = wTc[:3, 3]
+                target_pos = wTc[:3, 3] + (wTep.A[:3, 3] - wTc[:3, 3]) / np.linalg.norm(wTep.A[:3, 3] - wTc[:3, 3]) * mindist
+                middle = (camera_pos + target_pos) / 2
+                R, _, _ = transform_between_vectors(np.array([0., 0., 1.]), camera_pos - target_pos)
+
+                los = sg.Cylinder(radius=0.01, 
+                    length=np.linalg.norm(camera_pos - target_pos), 
+                    base=(sm.SE3(middle) * R)
+                )                
+
+            if isinstance(c_din, float):
+                c_din = [c_din]
+
+            los.color = [0, 255, 0]
+            if c_din is not None:
+                if min(c_din) < 0.0:
+                    los.color = [255, 0, 0]
+                
+
+            if idd is not None:
+                env.remove(idd)
+            idd = env.add(los)
+
 
             if (total_count * dt) > 50:
                 print("Simulation time out")

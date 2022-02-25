@@ -89,7 +89,7 @@ class Proposed(BaseController):
                         base=(sm.SE3(middle) * R)
         )
 
-        c_Ain, c_bin, _ = r.new_vision_collision_damper(
+        c_Ain, c_bin, _, _ = r.new_vision_collision_damper(
             los,
             r.q[:r.n],
             0.3,
@@ -99,7 +99,7 @@ class Proposed(BaseController):
             end=r.link_dict["gripper_link"],
             camera=r_cam,
             obj=Tep[:3, 3]
-        )    
+        )
 
 
         if c_Ain is not None and c_bin is not None:
